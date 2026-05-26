@@ -467,17 +467,18 @@ function App() {
                 className="theme-toggle-btn"
                 onClick={toggleTheme}
                 aria-label={`Switch to ${isDark ? 'light' : 'dark'} mode`}
+                title={`Switch to ${isDark ? 'light' : 'dark'} mode`}
               >
                 {isDark ? '☀️ Light' : '🌙 Dark'}
               </button>
               <LanguageSelector />
               {canInstall && (
-                <button type="button" className="pwa-install-btn" onClick={install} aria-label="Install app">
+                <button type="button" className="pwa-install-btn" onClick={install} aria-label="Install app" title="Install app">
                   ⬇ Install
                 </button>
               )}
               {!pushEnabled && 'Notification' in window && (
-                <button type="button" className="pwa-install-btn" onClick={() => enablePush(account?.publicKey)} aria-label="Enable push notifications">
+                <button type="button" className="pwa-install-btn" onClick={() => enablePush(account?.publicKey)} aria-label="Enable push notifications" title="Enable push notifications">
                   🔔 Notify
                 </button>
               )}
@@ -486,6 +487,7 @@ function App() {
                 className="shortcuts-help-btn"
                 onClick={() => dispatch({ type: A.SET_SHOW_SHORTCUTS, payload: !showShortcuts })}
                 aria-label="Show keyboard shortcuts"
+                title="Show keyboard shortcuts"
                 aria-expanded={showShortcuts}
                 aria-controls="shortcuts-panel"
               >
