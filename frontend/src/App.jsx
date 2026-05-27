@@ -290,7 +290,7 @@ function App() {
     } finally { dispatch({ type: A.SET_LOADING, payload: '' }); }
   };
 
-  const recipientValid = isValidStellarAddress(recipient);
+  const recipientValid = recipient.length === 56 && isValidStellarAddress(recipient);
   const recipientTouched = recipient.length > 0;
   const xlmBalance = balance?.balances?.find(b => b.asset === 'XLM')?.balance ?? null;
   const amountTouched = amount.length > 0;
