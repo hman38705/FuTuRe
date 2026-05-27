@@ -136,8 +136,7 @@ function App() {
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loading, showShortcuts]);
+  }, [loading, showShortcuts, createAccount, checkBalance, dispatch]);
 
   // Listen for SW notification that we're back online with queued payments
   useEffect(() => {
@@ -152,8 +151,7 @@ function App() {
   // Load label from backend when account is restored from persisted state
   useEffect(() => {
     if (account?.publicKey && !accountLabel) loadLabel(account.publicKey);
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [account?.publicKey]);
+  }, [account?.publicKey, accountLabel, loadLabel]);
 
   // Deep-link: open tx lookup when URL contains #tx=<hash>
   useEffect(() => {
@@ -250,7 +248,7 @@ function App() {
     }
   };
 
-  const createAccount = async () => {
+  const createAccount = useCallback(async () => {
     dispatch({ type: A.SET_LOADING, payload: 'create' });
     try {
       const { data } = await withTimeout(signal => axios.post('/api/stellar/account/create', null, { signal }));
@@ -262,7 +260,8 @@ function App() {
       logError(error, { context: 'createAccount' });
       msg.error(getFriendlyError(error), { retry: createAccount });
     } finally { dispatch({ type: A.SET_LOADING, payload: '' }); }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dispatch, msg]);
 
   const importAccount = async (secretKey) => {
     dispatch({ type: A.SET_LOADING, payload: 'import' });
@@ -278,7 +277,7 @@ function App() {
     } finally { dispatch({ type: A.SET_LOADING, payload: '' }); }
   };
 
-  const checkBalance = async () => {
+  const checkBalance = useCallback(async () => {
     if (!account) return;
     dispatch({ type: A.SET_LOADING, payload: 'balance' });
     try {
@@ -288,7 +287,8 @@ function App() {
       logError(error, { context: 'checkBalance' });
       msg.error(getFriendlyError(error), { retry: checkBalance });
     } finally { dispatch({ type: A.SET_LOADING, payload: '' }); }
-  };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [account, dispatch, msg]);
 
   const recipientValid = isValidStellarAddress(recipient);
   const recipientTouched = recipient.length > 0;
