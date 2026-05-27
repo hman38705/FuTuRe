@@ -50,7 +50,14 @@ function logError(req, error, context = {}) {
  *             schema:
  *               $ref: '#/components/schemas/Error'
  */
-router.post('/account/create', async (req, res) => {
+// Stricter rate limit for account creation (5 req/hour per IP) to prevent Friendbot abuse
+const accountCreateRateLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  message: 'Too many account creation requests, please try again later.',
+});
+
+router.post('/account/create', accountCreateRateLimiter, async (req, res) => {
   try {
     const account = await StellarService.createAccount();
     res.json(account);
