@@ -13,9 +13,6 @@ function getNetworkPassphrase() {
   return isTestnet() ? StellarSDK.Networks.TESTNET : StellarSDK.Networks.PUBLIC;
 }
 
-const isTestnet = process.env.STELLAR_NETWORK === 'testnet';
-const networkPassphrase = isTestnet ? StellarSDK.Networks.TESTNET : StellarSDK.Networks.PUBLIC;
-
 /**
  * Create a multi-signature account by setting signers and threshold on an existing account.
  * @param {string} sourceSecret - Secret key of the account to convert to multi-sig
@@ -178,7 +175,7 @@ export async function submitMultiSigTransaction(txId) {
   if (pending.status !== 'pending') throw new Error(`Transaction ${txId} is already ${pending.status}`);
   if (pending.expiresAt <= new Date()) throw new Error(`Transaction ${txId} has expired`);
 
-  const transaction = StellarSDK.TransactionBuilder.fromXDR(pending.txXdr, networkPassphrase);
+  const transaction = StellarSDK.TransactionBuilder.fromXDR(pending.txXdr, getNetworkPassphrase());
   const result = await getHorizonServer().submitTransaction(transaction);
 
   await prisma.pendingMultiSigTx.update({

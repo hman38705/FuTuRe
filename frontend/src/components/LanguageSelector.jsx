@@ -11,8 +11,9 @@ export function LanguageSelector({ className = '' }) {
   const handleChange = (e) => {
     const lang = e.target.value;
     i18n.changeLanguage(lang);
-    document.documentElement.lang = lang;
-    document.documentElement.dir = RTL_LANGUAGES.has(lang) ? 'rtl' : 'ltr';
+    const htmlRoot = document.documentElement;
+    htmlRoot.lang = lang;
+    htmlRoot.dir = RTL_LANGUAGES.has(lang) ? 'rtl' : 'ltr';
   };
 
   return (
