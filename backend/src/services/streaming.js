@@ -3,8 +3,30 @@ import prisma from '../db/client.js';
 import { sendPayment } from './stellar.js';
 import { eventMonitor } from '../eventSourcing/index.js';
 import logger from '../config/logger.js';
+import { encryptToEnvValue, decryptFromEnvValue } from '../config/secrets.js';
 
-export async function createStream({ senderPublicKey, recipientPublicKey, assetCode, rateAmount, intervalSeconds = 60, endTime, metadata }) {
+/**
+ * Per-stream secret encryption/decryption
+ * 
+ * SECURITY MODEL:
+ * - Each PaymentStream stores an encrypted senderSecret
+ * - Secrets are encrypted at rest using STREAM_SECRET_ENCRYPTION_KEY
+ * - Decryption happens only during payment processing
+ * - This is an interim solution before full delegated signing
+ * 
+ * See STREAMING_SECURITY.md for detailed security trade-offs and future improvements
+ */
+function getStreamEncryptionKey() {
+  const key = process.env.STREAM_SECRET_ENCRYPTION_KEY;
+  if (!key) throw new Error('STREAM_SECRET_ENCRYPTION_KEY is not set');
+  return key;
+}
+
+export async function createStream({ senderPublicKey, senderSecret, recipientPublicKey, assetCode, rateAmount, intervalSeconds = 60, endTime, metadata }) {
+  if (!senderSecret) throw new Error('senderSecret is required to create a stream');
+
+  const encryptedSecret = encryptToEnvValue(senderSecret, getStreamEncryptionKey());
+
   // Ensure users exist
   const [sender, recipient] = await Promise.all([
     prisma.user.upsert({ where: { publicKey: senderPublicKey }, update: {}, create: { publicKey: senderPublicKey } }),
@@ -21,6 +43,7 @@ export async function createStream({ senderPublicKey, recipientPublicKey, assetC
       endTime: endTime ? new Date(endTime) : null,
       metadata: metadata || {},
       status: 'ACTIVE',
+      senderSecret: encryptedSecret,
     },
   });
 
@@ -87,32 +110,72 @@ export async function cancelStream(id) {
   return stream;
 }
 
-export async function getStreamAnalytics() {
-  const streams = await prisma.paymentStream.findMany({
-    include: { sender: true, recipient: true }
+export async function updateStream(id, updates) {
+  const stream = await prisma.paymentStream.findUnique({
+    where: { id },
+    include: { sender: true },
   });
 
-  const totalVolume = streams.reduce((acc, s) => acc + parseFloat(s.totalStreamed), 0);
-  const activeCount = streams.filter(s => s.status === 'ACTIVE').length;
-  const pausedCount = streams.filter(s => s.status === 'PAUSED').length;
-  const failedCount = streams.filter(s => s.status === 'FAILED').length;
+  if (!stream) throw new Error('Stream not found');
+  if (!['ACTIVE', 'PAUSED'].includes(stream.status)) {
+    throw new Error(`Cannot update stream with status ${stream.status}`);
+  }
+
+  const updateData = {};
+  if (updates.rateAmount !== undefined) updateData.rateAmount = updates.rateAmount;
+  if (updates.intervalSeconds !== undefined) updateData.intervalSeconds = updates.intervalSeconds;
+  if (updates.endTime !== undefined) updateData.endTime = updates.endTime ? new Date(updates.endTime) : null;
+
+  const updated = await prisma.paymentStream.update({
+    where: { id },
+    data: updateData,
+    include: { sender: true },
+  });
+
+  await eventMonitor.publishEvent(stream.sender.publicKey, {
+    type: 'StreamUpdated',
+    data: { streamId: id, updates: updateData },
+    version: 1,
+  });
+
+  return updated;
+}
+
+export async function getStreamAnalytics() {
+  const [statusCounts, totalVolumeResult, assets] = await Promise.all([
+    prisma.paymentStream.groupBy({
+      by: ['status'],
+      _count: true,
+    }),
+    prisma.paymentStream.aggregate({
+      _sum: { totalStreamed: true },
+    }),
+    prisma.paymentStream.groupBy({
+      by: ['assetCode'],
+      _count: true,
+      orderBy: { _count: { assetCode: 'desc' } },
+      take: 10,
+    }),
+  ]);
+
+  const statusMap = statusCounts.reduce((acc, { status, _count }) => {
+    acc[status] = _count;
+    return acc;
+  }, {});
 
   return {
-    totalVolume: totalVolume.toFixed(7),
-    activeStreams: activeCount,
-    pausedStreams: pausedCount,
-    failedStreams: failedCount,
-    totalStreams: streams.length,
-    topAssets: Array.from(new Set(streams.map(s => s.assetCode))),
+    totalVolume: (totalVolumeResult._sum.totalStreamed || 0).toFixed(7),
+    activeStreams: statusMap.ACTIVE || 0,
+    pausedStreams: statusMap.PAUSED || 0,
+    failedStreams: statusMap.FAILED || 0,
+    completedStreams: statusMap.COMPLETED || 0,
+    cancelledStreams: statusMap.CANCELLED || 0,
+    totalStreams: Object.values(statusMap).reduce((a, b) => a + b, 0),
+    topAssets: assets.map(a => ({ assetCode: a.assetCode, count: a._count })),
   };
 }
 
-export async function processActiveStreams(sourceSecret) {
-  if (!sourceSecret) {
-    logger.warn('streaming.worker.skip', { reason: 'No sourceSecret provided' });
-    return;
-  }
-
+export async function processActiveStreams() {
   const now = new Date();
   const activeStreams = await prisma.paymentStream.findMany({
     where: {
@@ -133,9 +196,14 @@ export async function processActiveStreams(sourceSecret) {
 
     if (secondsSinceLast >= stream.intervalSeconds) {
        try {
-         // Execute payment on Stellar
+         if (!stream.senderSecret) {
+           throw new Error('Stream has no senderSecret — cannot sign transaction');
+         }
+         const senderSecret = decryptFromEnvValue(stream.senderSecret, getStreamEncryptionKey());
+
+         // Execute payment on Stellar using the actual sender's secret
          const result = await sendPayment(
-           sourceSecret, 
+           senderSecret,
            stream.recipient.publicKey, 
            stream.rateAmount.toString(), 
            stream.assetCode

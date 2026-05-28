@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { CopyButton } from './CopyButton';
 
 const VARIANTS = {
   hidden: { opacity: 0, y: 12, scale: 0.97 },
@@ -15,11 +16,11 @@ function Message({ msg, onRemove, onRetry }) {
       initial="hidden" animate="visible" exit="exit"
       layout
       role="alert"
-      aria-live={msg.type === 'error' ? 'assertive' : 'polite'}
       aria-atomic="true"
     >
       <span className="sm-icon" aria-hidden="true">{msg.icon}</span>
       <span className="sm-text">{msg.message}</span>
+      {msg.hash && <CopyButton text={msg.hash} label="Copy transaction hash" />}
       {msg.retry && (
         <button className="sm-retry" onClick={() => { onRetry(msg.id); msg.retry(); }} aria-label="Retry action">Retry</button>
       )}
@@ -32,7 +33,7 @@ export function StatusMessage({ messages, onRemove, showHistory = false, history
   const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
-    <div className="sm-wrap" aria-label="Notifications">
+    <div className="sm-wrap" aria-label="Notifications" aria-live="polite" aria-atomic="false">
       <AnimatePresence initial={false}>
         {messages.map((msg) => (
           <Message key={msg.id} msg={msg} onRemove={onRemove} onRetry={onRemove} />

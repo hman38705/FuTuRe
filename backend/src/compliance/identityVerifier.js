@@ -9,14 +9,14 @@ class IdentityVerifier {
     if (!record) throw new Error(`No KYC submission found for user ${userId}`);
 
     // 1. Sanctions check
-    const sanctioned = await sanctionsChecker.check(record.data.fullName, record.data.nationality);
+    const sanctioned = await sanctionsChecker.check(record.fullName, record.nationality);
     if (sanctioned.hit) {
       await kycCollector.updateStatus(userId, KYC_STATUS.REJECTED, `Sanctions match: ${sanctioned.reason}`);
       return { verified: false, reason: 'sanctions_hit', detail: sanctioned.reason };
     }
 
     // 2. Document validation (stub — replace with real provider)
-    const docResult = await this._callProvider(record.data);
+    const docResult = await this._callProvider(record);
     if (!docResult.valid) {
       await kycCollector.updateStatus(userId, KYC_STATUS.REJECTED, `Document invalid: ${docResult.reason}`);
       return { verified: false, reason: 'document_invalid', detail: docResult.reason };

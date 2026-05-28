@@ -53,15 +53,7 @@ function createRateLimiter(options = {}) {
   return limiter;
 }
 
-function rateLimiter(req, res, next) {
-  const clientIP = getClientIP(req);
-  
-  if (isWhitelisted(clientIP)) {
-    return next();
-  }
-  
-  return createRateLimiter()(req, res, next);
-}
+const rateLimiter = createRateLimiter();
 
 export { createRateLimiter, getClientIP };
 

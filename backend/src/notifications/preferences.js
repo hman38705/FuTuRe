@@ -54,8 +54,21 @@ export async function getPreferences(userId) {
  * @param {string} userId
  * @param {object} updates
  * @returns {object} merged preferences
+ * @throws {Error} if quiet hours are invalid
  */
 export async function updatePreferences(userId, updates) {
+  // Validate quiet hours if provided
+  if (typeof updates.quietHoursStart !== 'undefined') {
+    if (!Number.isInteger(updates.quietHoursStart) || updates.quietHoursStart < 0 || updates.quietHoursStart > 23) {
+      throw new Error('quietHoursStart must be an integer between 0 and 23');
+    }
+  }
+  if (typeof updates.quietHoursEnd !== 'undefined') {
+    if (!Number.isInteger(updates.quietHoursEnd) || updates.quietHoursEnd < 0 || updates.quietHoursEnd > 23) {
+      throw new Error('quietHoursEnd must be an integer between 0 and 23');
+    }
+  }
+
   const current = await getPreferences(userId);
 
   // Persist notificationsOn to DB Setting

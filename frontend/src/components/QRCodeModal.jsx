@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { useFocusTrap } from '../hooks/useFocusTrap';
+import { makeVariants } from '../utils/animations';
 
 function buildQRData(publicKey, amount) {
   if (amount && parseFloat(amount) > 0) {
@@ -15,6 +16,8 @@ export function QRCodeModal({ publicKey, onClose }) {
   const modalRef = useRef(null);
   const [amount, setAmount] = useState('');
   const [error, setError] = useState(null);
+  const prefersReduced = useReducedMotion();
+  const v = makeVariants(prefersReduced);
 
   useFocusTrap(modalRef, true);
 
@@ -45,18 +48,14 @@ export function QRCodeModal({ publicKey, onClose }) {
   return (
     <motion.div
       className="qr-overlay"
-      initial={{ opacity: 0 }}
-      animate={{ opacity: 1 }}
-      exit={{ opacity: 0 }}
+      variants={v.fadeSlide} initial="hidden" animate="visible" exit="exit"
       onClick={onClose}
       aria-hidden="true"
     >
       <motion.div
         ref={modalRef}
         className="qr-modal"
-        initial={{ scale: 0.85, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        exit={{ scale: 0.85, opacity: 0 }}
+        variants={v.pop}
         onClick={(e) => e.stopPropagation()}
         role="dialog"
         aria-modal="true"

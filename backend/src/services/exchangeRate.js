@@ -2,6 +2,8 @@ import * as StellarSDK from '@stellar/stellar-sdk';
 import logger from '../config/logger.js';
 import { getIssuer, SUPPORTED_ASSETS } from '../config/assets.js';
 import { broadcastToAccount } from './websocket.js';
+import { onConfigChange } from '../config/env.js';
+import { getHorizonServer } from './stellar.js';
 
 // ---------------------------------------------------------------------------
 // Config
@@ -19,6 +21,14 @@ const COINGECKO_IDS = { XLM: 'stellar', USDC: 'usd-coin' };
 const cache = new Map();
 const lastRates = new Map(); // for change detection
 let lastFetchAt = 0;
+
+// Clear cache when config changes (e.g., STELLAR_NETWORK switches)
+onConfigChange(() => {
+  cache.clear();
+  lastRates.clear();
+  lastFetchAt = 0;
+  logger.info('exchangeRate.cache.cleared', { reason: 'config reload' });
+});
 
 function cacheKey(from, to) { return `${from}:${to}`; }
 
@@ -70,12 +80,9 @@ async function fetchFromCoinGecko(from, to) {
 // ---------------------------------------------------------------------------
 async function fetchFromStellarDex(from, to) {
   try {
-    const horizonUrl = process.env.HORIZON_URL;
-    if (!horizonUrl) return null;
-    const horizonServer = new StellarSDK.Horizon.Server(horizonUrl);
     const fromAsset = from === 'XLM' ? StellarSDK.Asset.native() : new StellarSDK.Asset(from, getIssuer(from));
     const toAsset   = to   === 'XLM' ? StellarSDK.Asset.native() : new StellarSDK.Asset(to,   getIssuer(to));
-    const orderbook = await horizonServer.orderbook(fromAsset, toAsset).call();
+    const orderbook = await getHorizonServer().orderbook(fromAsset, toAsset).call();
     const rate = orderbook.asks?.[0]?.price ? parseFloat(orderbook.asks[0].price) : null;
     if (rate != null) logger.debug('exchangeRate.stellarDex', { from, to, rate });
     return rate;
@@ -114,17 +121,48 @@ export async function convert(amount, from, to) {
   return parseFloat((amount * rate).toFixed(7));
 }
 
-/** Fetch all supported pair rates at once. */
+/** Fetch all supported pair rates at once via a single batched CoinGecko request. */
 export async function getAllRates() {
-  const pairs = [];
+  // Collect assets that have a CoinGecko ID and aren't fully cached yet
+  const needed = SUPPORTED_ASSETS.filter(a => COINGECKO_IDS[a]);
+
+  // Single batched request: all coin IDs vs USD (USDC is pegged 1:1 to USD)
+  const pricesUsd = {};
+  try {
+    const ids = needed.map(a => COINGECKO_IDS[a]).join(',');
+    const apiKey = process.env.COINGECKO_API_KEY;
+    const headers = apiKey ? { 'x-cg-demo-api-key': apiKey } : {};
+    const res = await fetch(
+      `${COINGECKO_BASE}/simple/price?ids=${ids}&vs_currencies=usd`,
+      { headers, signal: AbortSignal.timeout(5_000) }
+    );
+    if (res.ok) {
+      const data = await res.json();
+      for (const asset of needed) {
+        const usd = data[COINGECKO_IDS[asset]]?.usd;
+        if (usd != null) pricesUsd[asset] = usd;
+      }
+      lastFetchAt = Date.now();
+    }
+  } catch (err) {
+    logger.warn('exchangeRate.getAllRates.coingecko.failed', { error: err.message });
+  }
+
+  // Derive all pairs from USD prices, fall back to getRate for anything missing
+  const results = [];
   for (const from of SUPPORTED_ASSETS) {
     for (const to of SUPPORTED_ASSETS) {
-      if (from !== to) pairs.push({ from, to });
+      if (from === to) continue;
+      let rate = getCached(from, to);
+      if (rate == null && pricesUsd[from] != null && pricesUsd[to] != null) {
+        rate = pricesUsd[from] / pricesUsd[to];
+        setCache(from, to, rate);
+        notifyIfChanged(from, to, rate);
+      }
+      if (rate == null) rate = await getRate(from, to); // fallback (DEX / cache)
+      results.push({ from, to, rate });
     }
   }
-  const results = await Promise.all(pairs.map(async ({ from, to }) => ({
-    from, to, rate: await getRate(from, to),
-  })));
   return results;
 }
 

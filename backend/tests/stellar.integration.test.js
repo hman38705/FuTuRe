@@ -363,3 +363,41 @@ describe('POST /api/stellar/trustline', () => {
     expect(res.body.errors[0]).toHaveProperty('field', 'assetCode');
   });
 });
+
+describe('Full payment flow — create → balance → send → history', () => {
+  it('completes the happy path end-to-end', async () => {
+    // 1. Create two funded testnet accounts
+    const [sender, receiver] = await Promise.all([
+      createFundedTestAccount(),
+      createFundedTestAccount(),
+    ]);
+
+    // Wait for both to be indexed on Horizon
+    await Promise.all([
+      waitForAccount(sender.publicKey),
+      waitForAccount(receiver.publicKey),
+    ]);
+
+    // 2. Check sender balance via API — must have XLM
+    const balanceRes = await request(app).get(`/api/stellar/account/${sender.publicKey}`);
+    expect(balanceRes.status).toBe(200);
+    const xlm = balanceRes.body.balances.find((b) => b.asset === 'XLM');
+    expect(parseFloat(xlm.balance)).toBeGreaterThan(0);
+
+    // 3. Send payment via API
+    const sendRes = await request(app)
+      .post('/api/stellar/payment/send')
+      .send({ sourceSecret: sender.secretKey, destination: receiver.publicKey, amount: '1' });
+    expect(sendRes.status).toBe(200);
+    expect(sendRes.body.success).toBe(true);
+    const txHash = sendRes.body.hash;
+    expect(typeof txHash).toBe('string');
+    expect(txHash).toHaveLength(64);
+
+    // 4. Verify transaction appears in receiver's history
+    const historyRes = await request(app).get(`/api/stellar/account/${receiver.publicKey}/transactions`);
+    expect(historyRes.status).toBe(200);
+    expect(Array.isArray(historyRes.body.records)).toBe(true);
+    expect(historyRes.body.records.length).toBeGreaterThan(0);
+  }, 90_000);
+});

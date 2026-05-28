@@ -1,15 +1,17 @@
 import * as StellarSDK from '@stellar/stellar-sdk';
-import dotenv from 'dotenv';
 import { eventMonitor } from '../eventSourcing/index.js';
+import { getConfig } from '../config/env.js';
+import prisma from '../db/client.js';
+import { getIssuer } from '../config/assets.js';
+import { getHorizonServer } from './stellar.js';
 
-dotenv.config();
+function isTestnet() {
+  return getConfig().stellar.network === 'testnet';
+}
 
-const server = new StellarSDK.Horizon.Server(process.env.HORIZON_URL);
-const isTestnet = process.env.STELLAR_NETWORK === 'testnet';
-const networkPassphrase = isTestnet ? StellarSDK.Networks.TESTNET : StellarSDK.Networks.PUBLIC;
-
-// In-memory store for pending multi-sig transactions (replace with DB in production)
-const pendingTransactions = new Map();
+function getNetworkPassphrase() {
+  return isTestnet() ? StellarSDK.Networks.TESTNET : StellarSDK.Networks.PUBLIC;
+}
 
 /**
  * Create a multi-signature account by setting signers and threshold on an existing account.
@@ -20,14 +22,7 @@ const pendingTransactions = new Map();
  */
 export async function createMultiSigAccount(sourceSecret, signers, thresholds, masterWeight = 1) {
   const sourceKeypair = StellarSDK.Keypair.fromSecret(sourceSecret);
-  const sourceAccount = await server.loadAccount(sourceKeypair.publicKey());
-
-  const txBuilder = new StellarSDK.TransactionBuilder(sourceAccount, {
-    fee: StellarSDK.BASE_FEE,
-    networkPassphrase,
-  });
-
-  // Set thresholds and master weight
+  const sourceAccount = await getHorizonServer().loadAccount(sourceKeypair.publicKey());
   txBuilder.addOperation(
     StellarSDK.Operation.setOptions({
       masterWeight,
@@ -51,7 +46,7 @@ export async function createMultiSigAccount(sourceSecret, signers, thresholds, m
 
   const transaction = txBuilder.setTimeout(30).build();
   transaction.sign(sourceKeypair);
-  const result = await server.submitTransaction(transaction);
+  const result = await getHorizonServer().submitTransaction(transaction);
 
   await eventMonitor.publishEvent(sourceKeypair.publicKey(), {
     type: 'MultiSigAccountCreated',
@@ -79,16 +74,16 @@ export async function createMultiSigAccount(sourceSecret, signers, thresholds, m
  * Build a multi-sig transaction (XDR) without submitting — signers collect signatures separately.
  */
 export async function buildMultiSigTransaction(sourcePublicKey, destination, amount, assetCode = 'XLM') {
-  const sourceAccount = await server.loadAccount(sourcePublicKey);
+  const sourceAccount = await getHorizonServer().loadAccount(sourcePublicKey);
 
   const asset =
     assetCode === 'XLM'
       ? StellarSDK.Asset.native()
-      : new StellarSDK.Asset(assetCode, process.env.ASSET_ISSUER);
+      : new StellarSDK.Asset(assetCode, getIssuer(assetCode));
 
   const transaction = new StellarSDK.TransactionBuilder(sourceAccount, {
     fee: StellarSDK.BASE_FEE,
-    networkPassphrase,
+    getNetworkPassphrase(),
   })
     .addOperation(
       StellarSDK.Operation.payment({
@@ -102,17 +97,20 @@ export async function buildMultiSigTransaction(sourcePublicKey, destination, amo
 
   const txXdr = transaction.toXDR();
   const txId = `multisig-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`;
+  const expiresAt = new Date(Date.now() + 5 * 60 * 1000);
 
-  pendingTransactions.set(txId, {
-    txId,
-    txXdr,
-    sourcePublicKey,
-    destination,
-    amount,
-    assetCode,
-    signatures: [],
-    createdAt: new Date().toISOString(),
-    status: 'pending',
+  await prisma.pendingMultiSigTx.create({
+    data: {
+      txId,
+      txXdr,
+      sourcePublicKey,
+      destination,
+      amount: amount.toString(),
+      assetCode,
+      signatures: [],
+      status: 'pending',
+      expiresAt,
+    },
   });
 
   await eventMonitor.publishEvent(sourcePublicKey, {
@@ -128,37 +126,43 @@ export async function buildMultiSigTransaction(sourcePublicKey, destination, amo
  * Add a signature to a pending multi-sig transaction.
  */
 export async function addSignature(txId, signerSecret) {
-  const pending = pendingTransactions.get(txId);
+  const pending = await prisma.pendingMultiSigTx.findUnique({ where: { txId } });
   if (!pending) throw new Error(`Transaction ${txId} not found`);
   if (pending.status !== 'pending') throw new Error(`Transaction ${txId} is already ${pending.status}`);
+  if (pending.expiresAt <= new Date()) throw new Error(`Transaction ${txId} has expired`);
 
   const signerKeypair = StellarSDK.Keypair.fromSecret(signerSecret);
   const signerPublicKey = signerKeypair.publicKey();
 
+  const signatures = pending.signatures;
   // Prevent duplicate signatures
-  if (pending.signatures.some((s) => s.publicKey === signerPublicKey)) {
+  if (signatures.some((s) => s.publicKey === signerPublicKey)) {
     throw new Error(`Signer ${signerPublicKey} has already signed this transaction`);
   }
 
-  const transaction = StellarSDK.TransactionBuilder.fromXDR(pending.txXdr, networkPassphrase);
+  const transaction = StellarSDK.TransactionBuilder.fromXDR(pending.txXdr, getNetworkPassphrase());
   transaction.sign(signerKeypair);
 
-  // Update stored XDR with new signature
-  pending.txXdr = transaction.toXDR();
-  pending.signatures.push({ publicKey: signerPublicKey, signedAt: new Date().toISOString() });
+  const updatedSignatures = [...signatures, { publicKey: signerPublicKey, signedAt: new Date().toISOString() }];
+  const updatedXdr = transaction.toXDR();
+
+  await prisma.pendingMultiSigTx.update({
+    where: { txId },
+    data: { txXdr: updatedXdr, signatures: updatedSignatures },
+  });
 
   await eventMonitor.publishEvent(pending.sourcePublicKey, {
     type: 'MultiSigTransactionSigned',
-    data: { txId, signerPublicKey, totalSignatures: pending.signatures.length },
+    data: { txId, signerPublicKey, totalSignatures: updatedSignatures.length },
     version: 1,
   });
 
   return {
     txId,
     signerPublicKey,
-    totalSignatures: pending.signatures.length,
-    signatures: pending.signatures,
-    txXdr: pending.txXdr,
+    totalSignatures: updatedSignatures.length,
+    signatures: updatedSignatures,
+    txXdr: updatedXdr,
   };
 }
 
@@ -166,14 +170,18 @@ export async function addSignature(txId, signerSecret) {
  * Submit a fully-signed multi-sig transaction to the network.
  */
 export async function submitMultiSigTransaction(txId) {
-  const pending = pendingTransactions.get(txId);
+  const pending = await prisma.pendingMultiSigTx.findUnique({ where: { txId } });
   if (!pending) throw new Error(`Transaction ${txId} not found`);
   if (pending.status !== 'pending') throw new Error(`Transaction ${txId} is already ${pending.status}`);
+  if (pending.expiresAt <= new Date()) throw new Error(`Transaction ${txId} has expired`);
 
-  const transaction = StellarSDK.TransactionBuilder.fromXDR(pending.txXdr, networkPassphrase);
-  const result = await server.submitTransaction(transaction);
+  const transaction = StellarSDK.TransactionBuilder.fromXDR(pending.txXdr, getNetworkPassphrase());
+  const result = await getHorizonServer().submitTransaction(transaction);
 
-  pending.status = result.successful ? 'submitted' : 'failed';
+  await prisma.pendingMultiSigTx.update({
+    where: { txId },
+    data: { status: result.successful ? 'submitted' : 'failed' },
+  });
 
   await eventMonitor.publishEvent(pending.sourcePublicKey, {
     type: 'MultiSigTransactionSubmitted',
@@ -200,7 +208,7 @@ export async function submitMultiSigTransaction(txId) {
  * Verify that a transaction XDR has valid signatures from the expected signers.
  */
 export function verifySignatures(txXdr, expectedSigners) {
-  const transaction = StellarSDK.TransactionBuilder.fromXDR(txXdr, networkPassphrase);
+  const transaction = StellarSDK.TransactionBuilder.fromXDR(txXdr, getNetworkPassphrase());
   const txHash = transaction.hash();
 
   const results = expectedSigners.map((publicKey) => {
@@ -225,7 +233,7 @@ export function verifySignatures(txXdr, expectedSigners) {
  * Get the current signers and thresholds for an account from the network.
  */
 export async function getMultiSigConfig(publicKey) {
-  const account = await server.loadAccount(publicKey);
+  const account = await getHorizonServer().loadAccount(publicKey);
 
   const signers = account.signers.map((s) => ({
     publicKey: s.key,
@@ -250,11 +258,11 @@ export async function getMultiSigConfig(publicKey) {
  */
 export async function updateMultiSigConfig(sourceSecret, updates) {
   const sourceKeypair = StellarSDK.Keypair.fromSecret(sourceSecret);
-  const sourceAccount = await server.loadAccount(sourceKeypair.publicKey());
+  const sourceAccount = await getHorizonServer().loadAccount(sourceKeypair.publicKey());
 
   const txBuilder = new StellarSDK.TransactionBuilder(sourceAccount, {
     fee: StellarSDK.BASE_FEE,
-    networkPassphrase,
+    getNetworkPassphrase(),
   });
 
   if (updates.thresholds || updates.masterWeight !== undefined) {
@@ -290,7 +298,7 @@ export async function updateMultiSigConfig(sourceSecret, updates) {
 
   const transaction = txBuilder.setTimeout(30).build();
   transaction.sign(sourceKeypair);
-  const result = await server.submitTransaction(transaction);
+  const result = await getHorizonServer().submitTransaction(transaction);
 
   await eventMonitor.publishEvent(sourceKeypair.publicKey(), {
     type: 'MultiSigConfigUpdated',
@@ -304,39 +312,27 @@ export async function updateMultiSigConfig(sourceSecret, updates) {
 /**
  * Get all pending multi-sig transactions for a given source account.
  */
-export function getPendingTransactions(sourcePublicKey) {
-  const results = [];
-  for (const tx of pendingTransactions.values()) {
-    if (tx.sourcePublicKey === sourcePublicKey) {
-      results.push({
-        txId: tx.txId,
-        destination: tx.destination,
-        amount: tx.amount,
-        assetCode: tx.assetCode,
-        signatures: tx.signatures,
-        status: tx.status,
-        createdAt: tx.createdAt,
-      });
-    }
-  }
-  return results;
+export async function getPendingTransactions(sourcePublicKey) {
+  const rows = await prisma.pendingMultiSigTx.findMany({ where: { sourcePublicKey } });
+  return rows.map(({ txId, destination, amount, assetCode, signatures, status, createdAt }) => ({
+    txId, destination, amount, assetCode, signatures, status, createdAt,
+  }));
 }
 
 /**
  * Get a specific pending transaction by ID.
  */
-export function getPendingTransaction(txId) {
-  const tx = pendingTransactions.get(txId);
-  if (!tx) return null;
-  return {
-    txId: tx.txId,
-    txXdr: tx.txXdr,
-    sourcePublicKey: tx.sourcePublicKey,
-    destination: tx.destination,
-    amount: tx.amount,
-    assetCode: tx.assetCode,
-    signatures: tx.signatures,
-    status: tx.status,
-    createdAt: tx.createdAt,
-  };
+export async function getPendingTransaction(txId) {
+  return prisma.pendingMultiSigTx.findUnique({ where: { txId } });
+}
+
+/**
+ * Mark all pending transactions past their expiresAt as 'expired'.
+ */
+export async function expireStaleTransactions() {
+  const { count } = await prisma.pendingMultiSigTx.updateMany({
+    where: { status: 'pending', expiresAt: { lte: new Date() } },
+    data: { status: 'expired' },
+  });
+  return count;
 }

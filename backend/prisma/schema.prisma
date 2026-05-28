@@ -2,11 +2,14 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// In Prisma 7, datasource configuration moved to prisma.config.js
+// The DATABASE_URL is configured there and passed via the adapter pattern
 datasource db {
   provider = "postgresql"
 }
 
 model User {
+ ci/add-migration-smoke-test
   id                      String                   @id @default(uuid())
   publicKey               String                   @unique
   createdAt               DateTime                 @default(now())
@@ -22,28 +25,59 @@ model User {
   kycRecord               KYCRecord?
 
   @@index([deletedAt])
+
+  id                     String                  @id @default(uuid())
+  publicKey              String                  @unique
+  username               String                  @unique
+  passwordHash           String
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
+  settings               Setting?
+  sentTxs                Transaction[]           @relation("sender")
+  receivedTxs            Transaction[]           @relation("recipient")
+  sentStreams            PaymentStream[]         @relation("streamSender")
+  receivedStreams        PaymentStream[]         @relation("streamRecipient")
+  notifications          Notification[]
+  notificationPreference NotificationPreference?
+  kycRecord              KYCRecord?
+  amlAlerts              AMLAlert[]
+ main
 }
 
 model Transaction {
-  id            String          @id @default(uuid())
-  hash          String          @unique
-  assetCode     String          @default("XLM")
+  id            String         @id @default(uuid())
+  hash          String         @unique
+  assetCode     String         @default("XLM")
   amount        Decimal
   ledger        Int?
+ ci/add-migration-smoke-test
   successful    Boolean         @default(true)
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
   deletedAt     DateTime?
+
+  successful    Boolean        @default(true)
+  memo          String?
+  memoType      String?        // 'text' | 'id'
+  createdAt     DateTime       @default(now())
+ main
   senderId      String
-  sender        User            @relation("sender",    fields: [senderId],    references: [id])
+  sender        User           @relation("sender", fields: [senderId], references: [id])
   recipientId   String
-  recipient     User            @relation("recipient", fields: [recipientId], references: [id])
-  retryAttempts Int             @default(0)
+  recipient     User           @relation("recipient", fields: [recipientId], references: [id])
+  retryAttempts Int            @default(0)
   retryStatus   String?
   lastRetryAt   DateTime?
   retryHistory  RetryAttempt[]
+ ci/add-migration-smoke-test
 
   @@index([deletedAt])
+
+  amlAlerts     AMLAlert[]
+
+  @@index([senderId, createdAt])
+  @@index([recipientId, createdAt])
+ main
 }
 
 model RetryAttempt {
@@ -59,12 +93,13 @@ model RetryAttempt {
 }
 
 model Setting {
-  id                String   @id @default(uuid())
-  userId            String   @unique
-  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  defaultAsset      String   @default("XLM")
-  notificationsOn   Boolean  @default(true)
-  updatedAt         DateTime @updatedAt
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  defaultAsset    String   @default("XLM")
+  notificationsOn Boolean  @default(true)
+  accountLabel    String?
+  updatedAt       DateTime @updatedAt
 }
 
 enum StreamStatus {
@@ -82,21 +117,28 @@ model PaymentStream {
   recipientId     String
   recipient       User         @relation("streamRecipient", fields: [recipientId], references: [id])
   assetCode       String       @default("XLM")
-  rateAmount      Decimal      // amount to stream per interval
+  rateAmount      Decimal
   intervalSeconds Int          @default(60)
   startTime       DateTime     @default(now())
   endTime         DateTime?
   lastProcessedAt DateTime     @default(now())
-  totalStreamed   Decimal      @default(0)
+  totalStreamed    Decimal      @default(0)
   status          StreamStatus @default(ACTIVE)
   failureCount    Int          @default(0)
   metadata        Json?
+  senderSecret    String?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
+ ci/add-migration-smoke-test
   @@index([senderId])
   @@index([recipientId])
 }
+
+  @@index([status, lastProcessedAt])
+}
+
+ main
 model Notification {
   id        String   @id @default(uuid())
   userId    String
@@ -115,6 +157,7 @@ model Notification {
 }
 
 model NotificationPreference {
+ ci/add-migration-smoke-test
   id               String   @id @default(uuid())
   userId           String   @unique
   user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -126,15 +169,28 @@ model NotificationPreference {
   quietHoursEnd    Int      @default(7)
   typeOverrides    Json?
   updatedAt        DateTime @updatedAt
+
+  id              String   @id @default(uuid())
+  userId          String   @unique
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailEnabled    Boolean  @default(true)
+  pushEnabled     Boolean  @default(true)
+  smsEnabled      Boolean  @default(false)
+  inAppEnabled    Boolean  @default(true)
+  quietHoursStart Int      @default(22)
+  quietHoursEnd   Int      @default(7)
+  typeOverrides   Json?
+  updatedAt       DateTime @updatedAt
+ main
 }
 
 model KYCRecord {
   id             String   @id @default(uuid())
   userId         String   @unique
   user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  status         String   @default("PENDING")  // PENDING | APPROVED | REJECTED | UNDER_REVIEW
+  status         String   @default("PENDING")
   fullName       String
-  dateOfBirth    String
+  dateOfBirth    DateTime
   nationality    String
   documentType   String
   documentNumber String
@@ -150,16 +206,49 @@ model KYCRecord {
 }
 
 model AMLAlert {
-  id            String   @id @default(uuid())
+  id            String      @id @default(uuid())
   transactionId String
+  transaction   Transaction @relation(fields: [transactionId], references: [id], onDelete: Restrict)
   userId        String
+  user          User        @relation(fields: [userId], references: [id], onDelete: Restrict)
   ruleId        String
   severity      String
   description   String
   riskScore     Int
   riskLevel     String
+ ci/add-migration-smoke-test
   createdAt     DateTime @default(now())
 
   @@index([transactionId])
   @@index([userId])
+
+  createdAt     DateTime    @default(now())
+
+  @@index([userId])
+  @@index([severity, createdAt])
+}
+
+model FeeBumpStat {
+  id              String   @id @default("singleton")
+  total           Int      @default(0)
+  totalFeeStroops BigInt   @default(0)
+  accounts        Json     @default("[]")
+  updatedAt       DateTime @updatedAt
+}
+
+model PendingMultiSigTx {
+  txId            String   @id
+  txXdr           String
+  sourcePublicKey String
+  destination     String
+  amount          String
+  assetCode       String   @default("XLM")
+  signatures      Json     @default("[]")
+  status          String   @default("pending")
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([status, expiresAt])
+ main
 }

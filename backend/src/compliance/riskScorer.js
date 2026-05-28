@@ -32,7 +32,7 @@ class RiskScorer {
     // Sanctions contribution
     const record = await kycCollector.getKYCRecord(tx.senderId);
     if (record) {
-      const sanctioned = await sanctionsChecker.check(record.data.fullName, record.data.nationality);
+      const sanctioned = await sanctionsChecker.check(record.fullName, record.nationality);
       if (sanctioned.hit) score += 50;
     }
 
@@ -50,10 +50,8 @@ class RiskScorer {
 
     if (record.status !== 'APPROVED') score += 30;
 
-    const sanctioned = await sanctionsChecker.check(record.data.fullName, record.data.nationality);
+    const sanctioned = await sanctionsChecker.check(record.fullName, record.nationality);
     if (sanctioned.hit) score += 50;
-
-    score = Math.min(score, 100);
     const level = RISK_LEVELS.find(l => score <= l.max)?.label || 'CRITICAL';
 
     return { score, level };

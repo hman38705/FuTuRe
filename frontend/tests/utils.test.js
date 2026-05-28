@@ -47,6 +47,23 @@ describe('validateAmount', () => {
   it('skips balance check when availableBalance is null', () => {
     expect(validateAmount('999999', null)).toBeNull();
   });
+
+  // Additional edge cases
+  it('rejects non-numeric strings', () => {
+    expect(validateAmount('abc', null)).toMatch(/positive/i);
+  });
+
+  it('rejects empty-ish non-numeric input like "."', () => {
+    expect(validateAmount('.', null)).toMatch(/positive/i);
+  });
+
+  it('accepts the minimum valid amount (0.0000001)', () => {
+    expect(validateAmount('0.0000001', null)).toBeNull();
+  });
+
+  it('rejects an amount just below the minimum reserve (0.00000009)', () => {
+    expect(validateAmount('0.00000009', null)).toMatch(/decimal/i);
+  });
 });
 
 // ── formatAmount ──────────────────────────────────────────────────────────────

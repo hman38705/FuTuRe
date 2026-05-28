@@ -1,5 +1,6 @@
 import helmet from 'helmet';
 import csrf from 'csurf';
+import crypto from 'crypto';
 import { getConfig } from '../config/env.js';
 import logger from '../config/logger.js';
 import { isWhitelisted } from '../security/ipWhitelist.js';
@@ -8,6 +9,17 @@ import { isWhitelisted } from '../security/ipWhitelist.js';
  * Security audit logger
  */
 const securityLogger = logger.child({ component: 'security' });
+
+/**
+ * Middleware that generates a per-request CSP nonce and stores it on res.locals.
+ * Must be applied before helmetMiddleware so the nonce is available to the CSP directives.
+ */
+export function cspNonceMiddleware() {
+  return (req, res, next) => {
+    res.locals.cspNonce = crypto.randomBytes(16).toString('base64');
+    next();
+  };
+}
 
 /**
  * Helmet.js configuration for security headers
@@ -23,12 +35,17 @@ export function helmetMiddleware() {
         defaultSrc: ["'self'"],
         scriptSrc: [
           "'self'",
-          "'unsafe-inline'", // Required for some React features
-          isProduction ? "" : "'unsafe-eval'", // Only in development
+          // Use per-request nonce instead of 'unsafe-inline'
+          (req, res) => `'nonce-${res.locals.cspNonce}'`,
+          isProduction ? null : "'unsafe-eval'", // Only in development
         ].filter(Boolean),
         styleSrc: ["'self'", "'unsafe-inline'"],
         imgSrc: ["'self'", "data:", "https:"],
-        connectSrc: ["'self'", "https://horizon.stellar.org", "https://horizon-testnet.stellar.org"],
+        connectSrc: [
+          "'self'",
+          "https://horizon.stellar.org",
+          "https://horizon-testnet.stellar.org",
+        ],
         fontSrc: ["'self'", "https:", "data:"],
         objectSrc: ["'none'"],
         mediaSrc: ["'self'"],
@@ -341,6 +358,7 @@ export function securityAuditLogger() {
  */
 export function securityMiddleware() {
   const middlewares = [
+    cspNonceMiddleware(), // must run before helmetMiddleware to populate res.locals.cspNonce
     helmetMiddleware(),
     securityHeaders(),
     requestSizeLimits(),
@@ -359,6 +377,7 @@ export function securityMiddleware() {
 }
 
 export default {
+  cspNonceMiddleware,
   helmetMiddleware,
   csrfMiddleware,
   csrfErrorHandler,

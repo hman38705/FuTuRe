@@ -1,75 +1,106 @@
-import fs from 'fs/promises';
-import path from 'path';
-import { fileURLToPath } from 'url';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const KYC_DIR = path.join(__dirname, '../../data/kyc');
+import { z } from 'zod';
+import prisma from '../db/client.js';
+import { encryptToEnvValue, decryptFromEnvValue } from '../config/secrets.js';
+import auditLogger from '../security/auditLogger.js';
 
 const KYC_STATUS = { PENDING: 'PENDING', APPROVED: 'APPROVED', REJECTED: 'REJECTED', UNDER_REVIEW: 'UNDER_REVIEW' };
 
+const kycSchema = z.object({
+  fullName:       z.string().min(1),
+  dateOfBirth:    z.string().date(),
+  nationality:    z.string().min(1),
+  documentType:   z.enum(['PASSPORT', 'NATIONAL_ID', 'DRIVERS_LICENSE', 'RESIDENCE_PERMIT']),
+  documentNumber: z.string().min(1),
+  address:        z.string().min(1),
+  phoneNumber:    z.string().regex(/^\+[1-9]\d{1,14}$/).optional(),
+  email:          z.string().email().optional(),
+});
+
+function getEncryptionKey() {
+  const key = process.env.CONFIG_ENCRYPTION_KEY;
+  if (!key) throw new Error('CONFIG_ENCRYPTION_KEY is not set');
+  return key;
+}
+
+function encryptField(value) {
+  return encryptToEnvValue(value, getEncryptionKey());
+}
+
+function decryptField(value) {
+  if (!value) return value;
+  try {
+    return decryptFromEnvValue(value, getEncryptionKey());
+  } catch {
+    return value; // return as-is if not encrypted (migration safety)
+  }
+}
+
+function decryptRecord(record) {
+  if (!record) return record;
+  return {
+    ...record,
+    documentNumber: decryptField(record.documentNumber),
+    address: decryptField(record.address),
+  };
+}
+
 class KYCCollector {
-  async initialize() {
-    await fs.mkdir(KYC_DIR, { recursive: true });
-  }
-
-  _filePath(userId) {
-    return path.join(KYC_DIR, `${userId}.json`);
-  }
-
   async submitKYC(userId, data) {
-    await this.initialize();
+    const parsed = kycSchema.parse(data);
+    const dob = new Date(parsed.dateOfBirth);
 
-    const required = ['fullName', 'dateOfBirth', 'nationality', 'documentType', 'documentNumber', 'address'];
-    const missing = required.filter(f => !data[f]);
-    if (missing.length) throw new Error(`Missing required KYC fields: ${missing.join(', ')}`);
-
-    const record = {
-      userId,
-      status: KYC_STATUS.PENDING,
-      submittedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      data: {
-        fullName: data.fullName,
-        dateOfBirth: data.dateOfBirth,
-        nationality: data.nationality,
-        documentType: data.documentType,   // PASSPORT | NATIONAL_ID | DRIVERS_LICENSE
-        documentNumber: data.documentNumber,
-        address: data.address,
-        phoneNumber: data.phoneNumber || null,
-        email: data.email || null,
+    const record = await prisma.kYCRecord.upsert({
+      where: { userId },
+      create: {
+        userId,
+        status: KYC_STATUS.PENDING,
+        fullName: parsed.fullName,
+        dateOfBirth: dob,
+        nationality: parsed.nationality,
+        documentType: parsed.documentType,
+        documentNumber: encryptField(parsed.documentNumber),
+        address: encryptField(parsed.address),
+        phoneNumber: parsed.phoneNumber ?? null,
+        email: parsed.email ?? null,
       },
-      verificationNotes: [],
-    };
+      update: {
+        status: KYC_STATUS.PENDING,
+        fullName: parsed.fullName,
+        dateOfBirth: dob,
+        nationality: parsed.nationality,
+        documentType: parsed.documentType,
+        documentNumber: encryptField(parsed.documentNumber),
+        address: encryptField(parsed.address),
+        phoneNumber: parsed.phoneNumber ?? null,
+        email: parsed.email ?? null,
+      },
+    });
 
-    await fs.writeFile(this._filePath(userId), JSON.stringify(record, null, 2));
-    return record;
+    return decryptRecord(record);
   }
 
   async getKYCRecord(userId) {
-    await this.initialize();
-    try {
-      const content = await fs.readFile(this._filePath(userId), 'utf-8');
-      return JSON.parse(content);
-    } catch (err) {
-      if (err.code === 'ENOENT') return null;
-      throw err;
-    }
+    const record = await prisma.kYCRecord.findUnique({ where: { userId } });
+    return decryptRecord(record);
   }
 
   async updateStatus(userId, status, note = null) {
-    const record = await this.getKYCRecord(userId);
+    const record = await prisma.kYCRecord.findUnique({ where: { userId } });
     if (!record) throw new Error(`KYC record not found for user ${userId}`);
-
-    record.status = status;
-    record.updatedAt = new Date().toISOString();
-    if (note) record.verificationNotes.push({ timestamp: new Date().toISOString(), note });
-
-    await fs.writeFile(this._filePath(userId), JSON.stringify(record, null, 2));
-    return record;
+    const updated = await prisma.kYCRecord.update({
+      where: { userId },
+      data: { status },
+    });
+    await auditLogger.logEvent('KYC_STATUS_CHANGED', userId, {
+      previousStatus: record.status,
+      newStatus: status,
+      note: note ?? null,
+    }, 'INFO');
+    return decryptRecord(updated);
   }
 
   async isVerified(userId) {
-    const record = await this.getKYCRecord(userId);
+    const record = await prisma.kYCRecord.findUnique({ where: { userId } });
     return record?.status === KYC_STATUS.APPROVED;
   }
 }

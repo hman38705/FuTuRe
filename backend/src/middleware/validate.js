@@ -1,6 +1,6 @@
 import { body, param, validationResult } from 'express-validator';
 import { SUPPORTED_ASSETS } from '../config/assets.js';
-import { sanitizeText, MAX_LENGTHS } from '../utils/sanitize.js';
+import { sanitizeText, MAX_LENGTHS, MEMO_TYPES } from '../utils/sanitize.js';
 
 // Stellar public key: starts with G, 56 chars, base32
 const STELLAR_PUBLIC_KEY = /^G[A-Z2-7]{55}$/;
@@ -36,6 +36,17 @@ export const rules = {
       .withMessage(`Memo exceeds ${MAX_LENGTHS.memo} characters`)
       .customSanitizer(v => sanitizeText(v, MAX_LENGTHS.memo)),
 
+  publicKeyBody: body('publicKey')
+    .trim()
+    .matches(STELLAR_PUBLIC_KEY)
+    .withMessage('Invalid Stellar public key'),
+  memoTypeField: () =>
+    body('memoType')
+      .optional()
+      .trim()
+      .isIn(MEMO_TYPES)
+      .withMessage(`memoType must be one of: ${MEMO_TYPES.join(', ')}`),
+
   publicKeyParam: param('publicKey')
     .trim()
     .matches(STELLAR_PUBLIC_KEY)
@@ -45,6 +56,11 @@ export const rules = {
     .trim()
     .matches(STELLAR_PUBLIC_KEY)
     .withMessage('Invalid Stellar account ID'),
+
+  addressParam: param('address')
+    .trim()
+    .matches(STELLAR_PUBLIC_KEY)
+    .withMessage('Invalid Stellar address'),
 
   importAccount: [
     body('secretKey')
@@ -67,7 +83,24 @@ export const rules = {
       .isFloat({ gt: 0 })
       .withMessage('Amount must be a positive number')
       .isLength({ max: 20 })
-      .withMessage('Amount too long'),
+      .withMessage('Amount too long')
+      .custom((amount) => {
+        // Normalize to fixed-decimal string with max 7 decimal places
+        const parsed = parseFloat(amount);
+        if (isNaN(parsed)) throw new Error('Amount must be a valid number');
+        
+        const normalized = parsed.toFixed(7);
+        const decimalPlaces = normalized.split('.')[1].replace(/0+$/, '').length;
+        
+        if (decimalPlaces > 7) {
+          throw new Error('Amount cannot have more than 7 decimal places');
+        }
+        return true;
+      })
+      .customSanitizer((amount) => {
+        // Normalize to fixed-decimal string with max 7 decimal places
+        return parseFloat(amount).toFixed(7);
+      }),
     body('assetCode')
       .optional()
       .trim()
@@ -75,6 +108,36 @@ export const rules = {
       .withMessage('Invalid asset code')
       .isIn(SUPPORTED_ASSETS)
       .withMessage(`Unsupported asset. Supported: ${SUPPORTED_ASSETS.join(', ')}`),
+    rules.memoField(),
+    rules.memoTypeField(),
+    // Cross-field validation for memo types
+    body('memo').custom((memo, { req }) => {
+      const memoType = req.body.memoType || 'text';
+      
+      if (!memo && memoType !== 'none') return true; // Optional memo
+      
+      switch (memoType) {
+        case 'id':
+          if (!memo) throw new Error('Memo is required when memoType is "id"');
+          if (!/^\d{1,20}$/.test(memo)) throw new Error('Memo must be a numeric ID when memoType is "id"');
+          if (BigInt(memo) > 18446744073709551615n) throw new Error('Memo ID exceeds maximum uint64 value');
+          break;
+        case 'hash':
+        case 'return':
+          if (!memo) throw new Error(`Memo is required when memoType is "${memoType}"`);
+          // Must be 32-byte hex string (64 hex chars)
+          if (!/^[0-9a-fA-F]{64}$/.test(memo)) {
+            throw new Error(`Memo must be a 64-character hex string (32 bytes) when memoType is "${memoType}"`);
+          }
+          break;
+        case 'text':
+        case 'none':
+        default:
+          // Text memos already validated by memoField()
+          break;
+      }
+      return true;
+    }),
   ],
 
   createTrustline: [
@@ -88,6 +151,21 @@ export const rules = {
       .withMessage('Invalid asset code')
       .custom(v => v !== 'XLM')
       .withMessage('Cannot create trustline for native XLM asset')
+      .isIn(SUPPORTED_ASSETS.filter(a => a !== 'XLM'))
+      .withMessage(`Unsupported asset. Supported non-native assets: ${SUPPORTED_ASSETS.filter(a => a !== 'XLM').join(', ')}`),
+  ],
+
+  removeTrustline: [
+    body('sourceSecret')
+      .trim()
+      .matches(STELLAR_SECRET_KEY)
+      .withMessage('Invalid Stellar secret key'),
+    body('assetCode')
+      .trim()
+      .matches(ASSET_CODE)
+      .withMessage('Invalid asset code')
+      .custom(v => v !== 'XLM')
+      .withMessage('Cannot remove trustline for native XLM asset')
       .isIn(SUPPORTED_ASSETS.filter(a => a !== 'XLM'))
       .withMessage(`Unsupported asset. Supported non-native assets: ${SUPPORTED_ASSETS.filter(a => a !== 'XLM').join(', ')}`),
   ],
@@ -148,7 +226,24 @@ export const rules = {
       .isFloat({ gt: 0 })
       .withMessage('Amount must be a positive number')
       .isLength({ max: 20 })
-      .withMessage('Amount too long'),
+      .withMessage('Amount too long')
+      .custom((amount) => {
+        // Normalize to fixed-decimal string with max 7 decimal places
+        const parsed = parseFloat(amount);
+        if (isNaN(parsed)) throw new Error('Amount must be a valid number');
+        
+        const normalized = parsed.toFixed(7);
+        const decimalPlaces = normalized.split('.')[1].replace(/0+$/, '').length;
+        
+        if (decimalPlaces > 7) {
+          throw new Error('Amount cannot have more than 7 decimal places');
+        }
+        return true;
+      })
+      .customSanitizer((amount) => {
+        // Normalize to fixed-decimal string with max 7 decimal places
+        return parseFloat(amount).toFixed(7);
+      }),
     body('assetCode')
       .optional()
       .trim()
@@ -179,3 +274,13 @@ export const rules = {
       .withMessage('Invalid expected signer public key'),
   ],
 };
+mergeAccount: [
+  body('sourceSecret')
+    .trim()
+    .matches(STELLAR_SECRET_KEY)
+    .withMessage('Invalid Stellar secret key'),
+  body('destination')
+    .trim()
+    .matches(STELLAR_PUBLIC_KEY)
+    .withMessage('Invalid destination public key'),
+],

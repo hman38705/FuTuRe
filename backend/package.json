@@ -6,6 +6,7 @@
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
     "test": "vitest run",
+    "format": "prettier --write \"src/**/*.js\"",
     "test:performance": "vitest run tests/performance.benchmark.test.js",
     "load-test:regression": "k6 run load-tests/k6/scenarios/performance-regression.js",
     "load-test:endpoints": "k6 run load-tests/k6/scenarios/api-endpoints.js",
@@ -19,7 +20,7 @@
     "@prisma/client": "^7.5.0",
     "@stellar/stellar-sdk": "^12.3.0",
     "cors": "^2.8.5",
-    "dotenv": "^16.4.5",
+    "dotenv": "^16.6.1",
     "express": "^4.19.2",
     "express-rate-limit": "^7.5.0",
     "express-validator": "^7.3.1",
@@ -32,6 +33,10 @@
     "swagger-ui-express": "^5.0.0",
     "winston": "^3.19.0",
     "winston-daily-rotate-file": "^5.0.0",
-    "ws": "^8.20.0"
+    "ws": "^8.20.0",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "prettier": "^3.3.3"
   }
 }

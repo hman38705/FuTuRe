@@ -12,7 +12,8 @@ export function createTabSync(onMessage) {
     };
   }
 
-  // Fallback: storage events (cross-tab, same origin)
+  // Fallback: storage events (cross-tab, same origin).
+  // Never write secretKey to localStorage — strip it from SET_ACCOUNT payloads.
   const handler = (e) => {
     if (e.key === CHANNEL_NAME) {
       try { onMessage(JSON.parse(e.newValue)); } catch { /* ignore */ }
@@ -21,7 +22,12 @@ export function createTabSync(onMessage) {
   window.addEventListener('storage', handler);
   return {
     broadcast: (msg) => {
-      try { localStorage.setItem(CHANNEL_NAME, JSON.stringify(msg)); } catch { /* ignore */ }
+      try {
+        const safe = msg.type === 'SET_ACCOUNT' && msg.payload?.secretKey
+          ? { ...msg, payload: { publicKey: msg.payload.publicKey } }
+          : msg;
+        localStorage.setItem(CHANNEL_NAME, JSON.stringify(safe));
+      } catch { /* ignore */ }
     },
     destroy: () => window.removeEventListener('storage', handler),
   };
