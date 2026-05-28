@@ -2,6 +2,8 @@ generator client {
   provider = "prisma-client-js"
 }
 
+// In Prisma 7, datasource configuration moved to prisma.config.js
+// The DATABASE_URL is configured there and passed via the adapter pattern
 datasource db {
   provider = "postgresql"
 }
@@ -9,6 +11,8 @@ datasource db {
 model User {
   id                     String                  @id @default(uuid())
   publicKey              String                  @unique
+  username               String                  @unique
+  passwordHash           String
   createdAt              DateTime                @default(now())
   updatedAt              DateTime                @updatedAt
   settings               Setting?
