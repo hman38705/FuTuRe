@@ -11,6 +11,7 @@ model User {
   publicKey               String                   @unique
   createdAt               DateTime                 @default(now())
   updatedAt               DateTime                 @updatedAt
+  deletedAt               DateTime?
   settings                Setting?
   sentTxs                 Transaction[]            @relation("sender")
   receivedTxs             Transaction[]            @relation("recipient")
@@ -19,6 +20,8 @@ model User {
   notifications           Notification[]
   notificationPreference  NotificationPreference?
   kycRecord               KYCRecord?
+
+  @@index([deletedAt])
 }
 
 model Transaction {
@@ -29,6 +32,8 @@ model Transaction {
   ledger        Int?
   successful    Boolean         @default(true)
   createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
+  deletedAt     DateTime?
   senderId      String
   sender        User            @relation("sender",    fields: [senderId],    references: [id])
   recipientId   String
@@ -37,6 +42,8 @@ model Transaction {
   retryStatus   String?
   lastRetryAt   DateTime?
   retryHistory  RetryAttempt[]
+
+  @@index([deletedAt])
 }
 
 model RetryAttempt {

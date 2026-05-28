@@ -3,6 +3,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import pkg from '@prisma/client';
 const { PrismaClient } = pkg;
 import logger from '../config/logger.js';
+import { setupSoftDeleteMiddleware } from './softDelete.js';
 
 const { Pool } = pg;
 
@@ -26,6 +27,9 @@ const prisma = new PrismaClient({
 
 prisma.$on('error', (e) => logger.error('db.error', { message: e.message, target: e.target }));
 prisma.$on('warn',  (e) => logger.warn('db.warn',  { message: e.message, target: e.target }));
+
+// Setup soft delete middleware
+setupSoftDeleteMiddleware(prisma);
 
 export async function connectDB() {
   await prisma.$connect();
