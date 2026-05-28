@@ -14,20 +14,11 @@ model User {
   settings                Setting?
   sentTxs                 Transaction[]            @relation("sender")
   receivedTxs             Transaction[]            @relation("recipient")
+  sentStreams             PaymentStream[]          @relation("streamSender")
+  receivedStreams         PaymentStream[]          @relation("streamRecipient")
   notifications           Notification[]
   notificationPreference  NotificationPreference?
-  id           String        @id @default(uuid())
-  publicKey    String        @unique
-  createdAt    DateTime      @default(now())
-  updatedAt    DateTime      @updatedAt
-  settings     Setting?
-  sentTxs          Transaction[]   @relation("sender")
-  receivedTxs      Transaction[]   @relation("recipient")
-  sentStreams      PaymentStream[] @relation("streamSender")
-  receivedStreams  PaymentStream[] @relation("streamRecipient")
-  kycRecord    KYCRecord?
-  sentTxs      Transaction[] @relation("sender")
-  receivedTxs  Transaction[] @relation("recipient")
+  kycRecord               KYCRecord?
 }
 
 model Transaction {
@@ -56,6 +47,8 @@ model RetryAttempt {
   errorType     String
   errorMessage  String
   timestamp     DateTime    @default(now())
+
+  @@index([transactionId])
 }
 
 model Setting {
@@ -93,6 +86,10 @@ model PaymentStream {
   metadata        Json?
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
+
+  @@index([senderId])
+  @@index([recipientId])
+}
 model Notification {
   id        String   @id @default(uuid())
   userId    String
@@ -122,6 +119,8 @@ model NotificationPreference {
   quietHoursEnd    Int      @default(7)
   typeOverrides    Json?
   updatedAt        DateTime @updatedAt
+}
+
 model KYCRecord {
   id             String   @id @default(uuid())
   userId         String   @unique
@@ -139,6 +138,8 @@ model KYCRecord {
   riskLevel      String?
   submittedAt    DateTime @default(now())
   updatedAt      DateTime @updatedAt
+
+  @@index([status])
 }
 
 model AMLAlert {
@@ -151,4 +152,7 @@ model AMLAlert {
   riskScore     Int
   riskLevel     String
   createdAt     DateTime @default(now())
+
+  @@index([transactionId])
+  @@index([userId])
 }
