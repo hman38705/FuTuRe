@@ -9,21 +9,18 @@ datasource db {
 }
 
 model User {
-  id                     String                  @id @default(uuid())
-  publicKey              String                  @unique
-  username               String                  @unique
-  passwordHash           String
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  settings               Setting?
-  sentTxs                Transaction[]           @relation("sender")
-  receivedTxs            Transaction[]           @relation("recipient")
-  sentStreams            PaymentStream[]         @relation("streamSender")
-  receivedStreams        PaymentStream[]         @relation("streamRecipient")
-  notifications          Notification[]
-  notificationPreference NotificationPreference?
-  kycRecord              KYCRecord?
-  amlAlerts              AMLAlert[]
+  id                      String                   @id @default(uuid())
+  publicKey               String                   @unique
+  createdAt               DateTime                 @default(now())
+  updatedAt               DateTime                 @updatedAt
+  settings                Setting?
+  sentTxs                 Transaction[]            @relation("sender")
+  receivedTxs             Transaction[]            @relation("recipient")
+  sentStreams             PaymentStream[]          @relation("streamSender")
+  receivedStreams         PaymentStream[]          @relation("streamRecipient")
+  notifications           Notification[]
+  notificationPreference  NotificationPreference?
+  kycRecord               KYCRecord?
 }
 
 model Transaction {
@@ -58,6 +55,8 @@ model RetryAttempt {
   errorType     String
   errorMessage  String
   timestamp     DateTime    @default(now())
+
+  @@index([transactionId])
 }
 
 model Setting {
@@ -98,9 +97,9 @@ model PaymentStream {
   createdAt       DateTime     @default(now())
   updatedAt       DateTime     @updatedAt
 
-  @@index([status, lastProcessedAt])
+  @@index([senderId])
+  @@index([recipientId])
 }
-
 model Notification {
   id        String   @id @default(uuid())
   userId    String
@@ -119,17 +118,17 @@ model Notification {
 }
 
 model NotificationPreference {
-  id              String   @id @default(uuid())
-  userId          String   @unique
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  emailEnabled    Boolean  @default(true)
-  pushEnabled     Boolean  @default(true)
-  smsEnabled      Boolean  @default(false)
-  inAppEnabled    Boolean  @default(true)
-  quietHoursStart Int      @default(22)
-  quietHoursEnd   Int      @default(7)
-  typeOverrides   Json?
-  updatedAt       DateTime @updatedAt
+  id               String   @id @default(uuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  emailEnabled     Boolean  @default(true)
+  pushEnabled      Boolean  @default(true)
+  smsEnabled       Boolean  @default(false)
+  inAppEnabled     Boolean  @default(true)
+  quietHoursStart  Int      @default(22)
+  quietHoursEnd    Int      @default(7)
+  typeOverrides    Json?
+  updatedAt        DateTime @updatedAt
 }
 
 model KYCRecord {
@@ -164,32 +163,8 @@ model AMLAlert {
   description   String
   riskScore     Int
   riskLevel     String
-  createdAt     DateTime    @default(now())
+  createdAt     DateTime @default(now())
 
+  @@index([transactionId])
   @@index([userId])
-  @@index([severity, createdAt])
-}
-
-model FeeBumpStat {
-  id              String   @id @default("singleton")
-  total           Int      @default(0)
-  totalFeeStroops BigInt   @default(0)
-  accounts        Json     @default("[]")
-  updatedAt       DateTime @updatedAt
-}
-
-model PendingMultiSigTx {
-  txId            String   @id
-  txXdr           String
-  sourcePublicKey String
-  destination     String
-  amount          String
-  assetCode       String   @default("XLM")
-  signatures      Json     @default("[]")
-  status          String   @default("pending")
-  expiresAt       DateTime
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-
-  @@index([status, expiresAt])
 }
