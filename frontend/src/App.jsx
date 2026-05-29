@@ -20,6 +20,7 @@ import { NetworkStatusBanner } from './components/NetworkStatusBanner';
 import { StatusMessage } from './components/StatusMessage';
 import { CopyButton } from './components/CopyButton';
 import { Spinner } from './components/Spinner';
+import { SkeletonBalance } from './components/Skeleton';
 import { TransactionHistory } from './components/TransactionHistory';
 import { StreamPayment } from './components/StreamPayment';
 import { PathPayment } from './components/PathPayment';
@@ -703,11 +704,14 @@ function App() {
                     aria-busy={loading === 'balance'}
                     aria-label="Check account balance"
                   >
-                    {loading === 'balance' ? <Spinner label="Checking balance…" /> : 'Check Balance'}
+                    {loading === 'balance' ? 'Checking Balance…' : 'Check Balance'}
                   </motion.button>
-                  <AnimatePresence>
-                    {balance && (
+                  <AnimatePresence mode="wait">
+                    {loading === 'balance' ? (
+                      <SkeletonBalance key="loading-balance" />
+                    ) : balance ? (
                       <motion.div
+                        key="balance-list"
                         variants={v.pop} initial="hidden" animate="visible" exit="exit"
                         style={{ marginTop: 10 }}
                         aria-label="Account balances"
