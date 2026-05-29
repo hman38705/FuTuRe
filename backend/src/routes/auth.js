@@ -6,6 +6,9 @@ import { signAccessToken, signRefreshToken, verifyToken } from '../auth/tokens.j
 import { requireAuth } from '../middleware/auth.js';
 import { consumePendingCredentials } from '../recovery/recoveryStore.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
+import { recordFailedLogin, isAccountLocked, unlockAccount, clearFailedAttempts, getLockoutDuration } from '../security/accountLockout.js';
+import { getClientIP } from '../middleware/rateLimiter.js';
+import logger from '../config/logger.js';
 
 const router = express.Router();
 
@@ -97,26 +100,36 @@ router.post('/register', userRules, validateBody, async (req, res) => {
  *                 recovered: { type: boolean }
  *       401:
  *         description: Invalid credentials
- *         content:
- *           application/json:
- *             schema:
- *               $ref: '#/components/schemas/Error'
+ *       423:
+ *         description: Account locked
  *       422:
  *         description: Validation error
  */
-router.post('/login', userRules, validateBody, async (req, res) => {
-// Stricter rate limit for login endpoint (10 req/min)
 const loginRateLimiter = createRateLimiter({
   windowMs: 60000,
   max: 10,
   message: 'Too many login attempts, please try again later.',
 });
 
-// POST /api/auth/login
 router.post('/login', loginRateLimiter, userRules, validateBody, async (req, res) => {
   const { username, password } = req.body;
+  const ipAddress = getClientIP(req);
+
+  // Check if account is locked
+  const locked = await isAccountLocked(username);
+  if (locked) {
+    const retryAfter = Math.ceil(getLockoutDuration() / 1000);
+    return res.status(423).set('Retry-After', retryAfter).json({
+      error: 'Account is temporarily locked due to too many failed login attempts',
+      retryAfter,
+    });
+  }
+
   const user = findUser(username);
-  if (!user) return res.status(401).json({ error: 'Invalid credentials' });
+  if (!user) {
+    await recordFailedLogin(username, ipAddress);
+    return res.status(401).json({ error: 'Invalid credentials' });
+  }
 
   // Check for pending recovered credentials first
   const recovered = consumePendingCredentials(user.id);
@@ -124,6 +137,7 @@ router.post('/login', loginRateLimiter, userRules, validateBody, async (req, res
     const valid = await verifyPassword(password, recovered.passwordHash);
     if (valid) {
       updateUserPassword(user.id, recovered.passwordHash);
+      await clearFailedAttempts(username);
       const payload = { sub: user.id, username: user.username };
       return res.json({
         accessToken: signAccessToken(payload),
@@ -131,11 +145,17 @@ router.post('/login', loginRateLimiter, userRules, validateBody, async (req, res
         recovered: true,
       });
     }
+    await recordFailedLogin(username, ipAddress);
+    return res.status(401).json({ error: 'Invalid credentials' });
   }
 
   if (!(await verifyPassword(password, user.passwordHash))) {
+    await recordFailedLogin(username, ipAddress);
     return res.status(401).json({ error: 'Invalid credentials' });
   }
+
+  // Successful login - clear failed attempts
+  await clearFailedAttempts(username);
   const payload = { sub: user.id, username: user.username };
   res.json({
     accessToken: signAccessToken(payload),
@@ -231,6 +251,51 @@ router.get('/profile', requireAuth, (req, res) => {
   const user = getUserById(req.user.sub);
   if (!user) return res.status(404).json({ error: 'User not found' });
   res.json({ id: user.id, username: user.username, createdAt: user.createdAt });
+});
+
+/**
+ * @swagger
+ * /api/auth/admin/unlock:
+ *   post:
+ *     summary: Admin endpoint to manually unlock an account
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [username]
+ *             properties:
+ *               username:
+ *                 type: string
+ *     responses:
+ *       200:
+ *         description: Account unlocked
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Forbidden (not admin)
+ */
+router.post('/admin/unlock', requireAuth, async (req, res) => {
+  const { username } = req.body;
+  
+  // Check if user is admin (simplified - in production use proper role checking)
+  const user = getUserById(req.user.sub);
+  if (!user?.isAdmin) {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+
+  try {
+    await unlockAccount(username);
+    logger.info({ admin: user.username, unlocked: username }, 'Account unlocked by admin');
+    res.json({ message: `Account ${username} has been unlocked` });
+  } catch (err) {
+    logger.error({ err, username }, 'Failed to unlock account');
+    res.status(500).json({ error: 'Failed to unlock account' });
+  }
 });
 
 export default router;
