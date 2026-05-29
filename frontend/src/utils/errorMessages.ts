@@ -1,4 +1,25 @@
-const ERROR_MAP = [
+interface ErrorMatch {
+  match: RegExp;
+  message: string;
+}
+
+interface ApiError {
+  response?: {
+    data?: {
+      extras?: {
+        result_codes?: {
+          transaction?: string;
+          operations?: string[];
+        };
+      };
+      error?: string;
+    };
+  };
+  code?: string;
+  message?: string;
+}
+
+const ERROR_MAP: ErrorMatch[] = [
   { match: /insufficient balance/i, message: 'Insufficient balance to complete this payment.' },
   { match: /no account found|account not found|404/i, message: 'Destination account does not exist on the Stellar network.' },
   { match: /ECONNABORTED|ERR_NETWORK/i, message: 'Connection timed out — please check your internet connection.' },
@@ -8,7 +29,7 @@ const ERROR_MAP = [
   { match: /tx_failed/i, message: 'Transaction was rejected by the Stellar network.' },
 ];
 
-const STELLAR_RESULT_CODES = {
+const STELLAR_RESULT_CODES: Record<string, string> = {
   // Transaction result codes
   tx_success: 'Transaction completed successfully.',
   tx_failed: 'Transaction failed.',
@@ -41,9 +62,11 @@ const STELLAR_RESULT_CODES = {
   op_not_supported: 'Operation type is not supported.',
 };
 
-export function getFriendlyError(error) {
+export function getFriendlyError(error: unknown): string {
+  const err = error as ApiError;
+
   // Check for Stellar SDK result codes first
-  const resultCodes = error?.response?.data?.extras?.result_codes;
+  const resultCodes = err?.response?.data?.extras?.result_codes;
   if (resultCodes) {
     if (resultCodes.transaction) {
       const txCode = resultCodes.transaction;
@@ -60,12 +83,12 @@ export function getFriendlyError(error) {
   }
 
   // Handle axios timeout (ECONNABORTED) and network errors (ERR_NETWORK) by error code
-  if (error?.code === 'ECONNABORTED' || error?.code === 'ERR_NETWORK') {
+  if (err?.code === 'ECONNABORTED' || err?.code === 'ERR_NETWORK') {
     return 'Connection timed out — please check your internet connection.';
   }
 
   // Fall back to string matching
-  const raw = error?.response?.data?.error || error?.message || String(error);
+  const raw = err?.response?.data?.error || err?.message || String(error);
   console.error('[Stellar Error]', raw);
   const match = ERROR_MAP.find(e => e.match.test(raw));
   return match ? match.message : `Something went wrong: ${raw}`;

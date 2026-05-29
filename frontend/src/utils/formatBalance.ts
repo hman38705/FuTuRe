@@ -1,14 +1,8 @@
 const MAX_DECIMALS = 7;
 
-/**
- * Format a Stellar balance value for display.
- * - Adds thousand separators
- * - Limits to 7 decimal places (Stellar precision)
- * - Handles very small and very large numbers
- */
-export function formatBalance(value, decimals = MAX_DECIMALS) {
+export function formatBalance(value: string | number | null | undefined, decimals: number = MAX_DECIMALS): string {
   if (value === null || value === undefined || value === '') return '—';
-  const num = parseFloat(value);
+  const num = parseFloat(String(value));
   if (isNaN(num)) return String(value);
 
   // Very small non-zero: show in fixed notation with max precision
@@ -20,10 +14,7 @@ export function formatBalance(value, decimals = MAX_DECIMALS) {
   });
 }
 
-/**
- * Format a balance with its asset label, e.g. "1,234.5670000 XLM"
- */
-export function formatBalanceWithAsset(balance, asset) {
+export function formatBalanceWithAsset(balance: string | number | null | undefined, asset?: string): string {
   const formatted = formatBalance(balance);
   return asset ? `${formatted} ${asset}` : formatted;
 }

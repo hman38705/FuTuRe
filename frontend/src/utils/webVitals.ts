@@ -1,7 +1,22 @@
+import type { Metric } from 'web-vitals';
 import { onCLS, onFCP, onINP, onLCP, onTTFB } from 'web-vitals';
 
+interface VitalEntry {
+  name: string;
+  value: number;
+  rating: string;
+  budget: number | undefined;
+  over: boolean;
+}
+
+declare global {
+  interface Window {
+    __reportVital?: (entry: VitalEntry) => void;
+  }
+}
+
 // Performance budgets — alert if exceeded
-const BUDGETS = {
+const BUDGETS: Record<string, number> = {
   CLS:  0.1,
   FCP:  1800,
   INP:  200,
@@ -9,11 +24,11 @@ const BUDGETS = {
   TTFB: 800,
 };
 
-function report(metric) {
+function report(metric: Metric): void {
   const budget = BUDGETS[metric.name];
   const over = budget != null && metric.value > budget;
 
-  const entry = {
+  const entry: VitalEntry = {
     name:   metric.name,
     value:  Math.round(metric.value),
     rating: metric.rating,       // 'good' | 'needs-improvement' | 'poor'
@@ -32,7 +47,7 @@ function report(metric) {
   window.__reportVital?.(entry);
 }
 
-export function initWebVitals() {
+export function initWebVitals(): void {
   onCLS(report);
   onFCP(report);
   onINP(report);

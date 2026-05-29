@@ -3,7 +3,7 @@ const MAX_DECIMALS = 7;
 const BASE_FEE = 0.00001;
 const MIN_RESERVE = 1;
 
-export function validateAmount(value, availableBalance) {
+export function validateAmount(value: string, availableBalance: number | null): string | null {
   if (!value) return null;
   if (/e/i.test(value)) return 'Scientific notation is not allowed';
   const num = parseFloat(value);
@@ -19,7 +19,7 @@ export function validateAmount(value, availableBalance) {
   return null;
 }
 
-export function formatAmount(value) {
+export function formatAmount(value: string): string {
   // Remove leading zeros (but keep "0." prefix)
   return value.replace(/^0+(?=\d)/, '');
 }
