@@ -32,6 +32,7 @@ import { eventMonitor } from './eventSourcing/index.js';
 import streamingRoutes from './routes/streaming.js';
 import retryRoutes from './routes/retry.js';
 import accountsRoutes from './routes/accounts.js';
+import clinicsRoutes from './routes/clinics.js';
 import { auditLogger } from './security/index.js';
 import { getConfig } from './config/env.js';
 import { createRateLimiter } from './middleware/rateLimiter.js';
@@ -144,6 +145,7 @@ app.use('/api/v1/streaming', streamingRoutes);
 app.use('/api/v1/recovery', recoveryRoutes);
 app.use('/api/v1/retry', retryRoutes);
 app.use('/api/v1/accounts', accountsRoutes);
+app.use('/api/v1/clinics/:id/keypair', clinicsRoutes);
 
 // Health routes (not versioned - used by load balancers)
 app.use('/', healthRoutes);
