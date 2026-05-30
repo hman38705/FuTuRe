@@ -21,6 +21,8 @@ jobs:
 
     - run: npm install
 
+    - name: Audit dependencies for vulnerabilities
+      run: npm audit --audit-level=high
     - name: Type-check TypeScript
       working-directory: frontend
       run: npm run typecheck
