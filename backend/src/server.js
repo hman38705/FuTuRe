@@ -1,5 +1,6 @@
 import { createServer } from 'http';
 import express from 'express';
+import compression from 'compression';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import swaggerUi from 'swagger-ui-express';
@@ -57,6 +58,15 @@ const logger = {
 
 const app = express();
 const PORT = getConfig().server.port;
+
+// Compress all responses (gzip for broad support, brotli when client supports it)
+app.use(compression({
+  filter: (req, res) => {
+    if (req.headers['x-no-compression']) return false;
+    return compression.filter(req, res);
+  },
+  level: 6,
+}));
 
 // Security middleware
 app.use(securityMiddleware());

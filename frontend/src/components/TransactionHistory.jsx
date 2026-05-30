@@ -13,7 +13,7 @@ function truncateKey(key) {
 }
 
 const TYPE_LABELS = { payment: 'Payment', create_account: 'Account Created', unknown: 'Other' };
-const PAGE_SIZE = 10;
+const PAGE_SIZE = 20;
 
 function fmt(dateStr) {
   return new Date(dateStr).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' });
@@ -161,12 +161,13 @@ function TxModal({ tx, onClose }) {
 
 export function TransactionHistory({ publicKey }) {
   const [txs, setTxs] = useState([]);
-  const [nextCursor, setNextCursor] = useState(null);
+  const [hasMore, setHasMore] = useState(false);
   const [loading, setLoading] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [selected, setSelected] = useState(null);
   const [filters, setFilters] = useState({ type: '', dateFrom: '', dateTo: '', hash: '' });
-  const [cursors, setCursors] = useState([]); // ring-buffer for back-pagination (max 50)
+  const [page, setPage] = useState(1);
+  const [cursors, setCursors] = useState([]); // cursor per page index for back-navigation
   const [error, setError] = useState(null);
   const [retrying, setRetrying] = useState({}); // { [txId]: 'pending' | 'success' | 'error' }
   const [exporting, setExporting] = useState(false);
@@ -186,26 +187,27 @@ export function TransactionHistory({ publicKey }) {
     }
   };
 
-  const MAX_CURSOR_HISTORY = 50;
-
-  const fetchPage = useCallback(async (cursor = null, isBack = false) => {
+  const fetchPage = useCallback(async (targetPage = 1, cursor = null) => {
     setLoading(true);
     setError(null);
     try {
-      const params = { limit: PAGE_SIZE, ...(cursor ? { cursor } : {}) };
+      const params = { page: targetPage, pageSize: PAGE_SIZE, ...(cursor ? { cursor } : {}) };
       if (filters.type) params.type = filters.type;
       if (filters.dateFrom) params.dateFrom = filters.dateFrom;
       if (filters.dateTo) params.dateTo = filters.dateTo;
       if (filters.hash) params.hash = filters.hash;
-      const { data } = await axios.get(`/api/stellar/account/${publicKey}/transactions`, { params });
-      setTxs(data.records);
-      setNextCursor(data.nextCursor);
+      const { data: resp } = await axios.get(`/api/v1/transactions/${publicKey}`, { params });
+      const records = resp.data ?? resp.records ?? resp;
+      setTxs(Array.isArray(records) ? records : []);
+      setHasMore(!!resp.nextCursor || (Array.isArray(records) && records.length === PAGE_SIZE));
+      setPage(targetPage);
       setLoaded(true);
 
-      if (!isBack && cursor) {
+      if (targetPage > 1 && resp.nextCursor) {
         setCursors(prev => {
-          const next = [...prev, cursor];
-          return next.length > MAX_CURSOR_HISTORY ? next.slice(next.length - MAX_CURSOR_HISTORY) : next;
+          const next = [...prev];
+          next[targetPage - 1] = resp.nextCursor;
+          return next;
         });
       }
     } catch (e) {
@@ -215,14 +217,10 @@ export function TransactionHistory({ publicKey }) {
     }
   }, [publicKey, filters]);
 
-  const handleLoad = () => { setCursors([]); fetchPage(null); };
-  const handleNext = () => fetchPage(nextCursor);
-  const handleBack = () => {
-    const prev = cursors[cursors.length - 2] ?? null;
-    setCursors(c => c.slice(0, -1));
-    fetchPage(prev, true);
-  };
-  const applyFilters = (e) => { e.preventDefault(); setCursors([]); fetchPage(null); };
+  const handleLoad = () => { setCursors([]); setPage(1); fetchPage(1, null); };
+  const handleNext = () => fetchPage(page + 1, cursors[page - 1] ?? null);
+  const handleBack = () => fetchPage(page - 1, cursors[page - 2] ?? null);
+  const applyFilters = (e) => { e.preventDefault(); setCursors([]); setPage(1); fetchPage(1, null); };
 
   const handleRetry = useCallback(async (tx) => {
     setRetrying(r => ({ ...r, [tx.id]: 'pending' }));
@@ -336,8 +334,9 @@ export function TransactionHistory({ publicKey }) {
                   {txs.map(tx => <TxRow key={tx.id} tx={tx} onClick={setSelected} onRetry={retrying[tx.id] !== 'pending' ? handleRetry : null} />)}
                 </div>
                 <nav className="tx-pagination" aria-label="Transaction page navigation">
-                  <button onClick={handleBack} disabled={cursors.length === 0 || loading} className="tx-page-btn" aria-label="Previous page">← Prev</button>
-                  <button onClick={handleNext} disabled={!nextCursor || loading} className="tx-page-btn" aria-label="Next page">Next →</button>
+                  <button onClick={handleBack} disabled={page <= 1 || loading} className="tx-page-btn" aria-label="Previous page">← Prev</button>
+                  <span className="tx-page-info" aria-current="page">Page {page}</span>
+                  <button onClick={handleNext} disabled={!hasMore || loading} className="tx-page-btn" aria-label="Next page">Next →</button>
                 </nav>
               </>
             )}

@@ -21,7 +21,7 @@ export default defineConfig(({ mode }) => ({
         manualChunks: {
           vendor:        ['react', 'react-dom'],
           motion:        ['framer-motion'],
-          stellar:       ['@stellar/stellar-sdk'],
+          stellar:       ['@stellar/stellar-base'],
         },
         // Ensure hashed filenames for immutable CDN caching
         entryFileNames: 'assets/[name]-[hash].js',

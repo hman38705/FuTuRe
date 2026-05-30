@@ -89,8 +89,11 @@ function logError(req, error, context = {}) {
 router.get('/:accountId', rules.accountIdParam, validate, async (req, res) => {
   try {
     const { accountId } = req.params;
+    const page = Math.max(1, parseInt(req.query.page) || 1);
+    const pageSize = Math.min(100, Math.max(1, parseInt(req.query.pageSize) || parseInt(req.query.limit) || 20));
+
     const options = {
-      limit: parseInt(req.query.limit) || 20,
+      limit: pageSize,
       cursor: req.query.cursor,
       order: req.query.order || 'desc',
       includeFailed: req.query.includeFailed === 'true',
@@ -99,8 +102,17 @@ router.get('/:accountId', rules.accountIdParam, validate, async (req, res) => {
       endTime: req.query.endTime
     };
 
-    const transactions = await transactionService.getTransactions(accountId, options);
-    res.json(transactions);
+    const data = await transactionService.getTransactions(accountId, options);
+    const nextCursor = data.length === pageSize ? (data[data.length - 1]?.paging_token ?? null) : null;
+
+    res.json({
+      data,
+      total: data.length,
+      page,
+      pageSize,
+      totalPages: null,
+      nextCursor,
+    });
   } catch (error) {
     logError(req, error, { accountId: req.params.accountId });
     res.status(500).json({ error: 'Failed to retrieve transactions' });
