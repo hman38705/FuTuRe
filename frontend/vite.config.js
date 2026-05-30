@@ -33,6 +33,7 @@ export default defineConfig(({ mode }) => ({
         manualChunks: {
           vendor:        ['react', 'react-dom'],
           motion:        ['framer-motion'],
+          stellar:       ['@stellar/stellar-base'],
           stellar:       ['@stellar/stellar-sdk'],
 /**
  * Vite plugin that validates required VITE_* environment variables at build

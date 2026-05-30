@@ -34,14 +34,14 @@ export function getCdnConfig() {
 // ── Cache strategy ────────────────────────────────────────────────────────────
 
 const CACHE_PROFILES = {
-  // Static assets with content hash — cache forever
-  immutable: (maxAge) => `public, max-age=${maxAge}, immutable`,
+  // Static assets with content hash — cache for 1 year (immutable)
+  immutable: () => 'public, max-age=31536000, immutable',
   // API responses — short TTL, allow stale while revalidating
   api:        () => 'public, max-age=30, stale-while-revalidate=60',
   // User-specific data — private, no CDN caching
   private:    () => 'private, no-store',
-  // HTML entry point — always revalidate
-  html:       () => 'public, max-age=0, must-revalidate',
+  // HTML entry point — always revalidate from server
+  html:       () => 'no-cache',
 };
 
 export function getCacheHeaders(profile = 'api') {

@@ -178,6 +178,38 @@ server_reset_query =
 
 > `server_reset_query` must be empty in transaction mode because connections are not owned by a single client between statements.
 
+## CDN Setup
+
+The backend includes CDN middleware (`backend/src/cdn/index.js`) that sets `Cache-Control` and security headers on all responses.
+
+### Environment variables
+
+| Variable | Description | Default |
+|---|---|---|
+| `CDN_ENABLED` | Enable CDN integration | `false` |
+| `CDN_URL` | Primary CDN origin URL | — |
+| `CDN_SECONDARY_URL` | Fallback CDN origin URL | — |
+| `CDN_CACHE_MAX_AGE_S` | Default cache TTL in seconds (used for API responses) | `86400` |
+| `CDN_REGIONS` | Comma-separated list of CDN regions | `us-east-1` |
+| `VITE_CDN_URL` | CDN base URL for frontend asset paths (set at build time) | `/` |
+
+### Cache-Control strategy
+
+| Path pattern | Header | Rationale |
+|---|---|---|
+| `/assets/*` | `Cache-Control: public, max-age=31536000, immutable` | Vite produces content-hashed filenames; safe to cache forever |
+| `*.html` (e.g. `index.html`) | `Cache-Control: no-cache` | Must always revalidate so clients pick up new asset hashes |
+| `/api/*` | `Cache-Control: public, max-age=30, stale-while-revalidate=60` | Short TTL for API data |
+
+### Enabling CDN in production
+
+1. Set `CDN_ENABLED=true`.
+2. Set `CDN_URL` to your CDN origin (e.g. `https://cdn.example.com`).
+3. Set `VITE_CDN_URL` to the same value at frontend build time so asset URLs point to the CDN.
+4. Optionally set `CDN_SECONDARY_URL` for automatic failover.
+
+The middleware also emits `Surrogate-Control` headers for Fastly/Varnish and `Vary: Accept-Encoding` on all responses to support compressed variants in the CDN cache.
+
 ## Prisma query logging
 
 | Variable | Behaviour |
