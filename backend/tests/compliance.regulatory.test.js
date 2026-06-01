@@ -26,7 +26,11 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '../data');
 
 async function cleanup() {
-  try { await fs.rm(DATA_DIR, { recursive: true, force: true }); } catch {}
+  try {
+    await fs.rm(DATA_DIR, { recursive: true, force: true });
+  } catch (_) {
+    /* no-op */
+  }
 }
 
 beforeEach(cleanup);
@@ -53,9 +57,9 @@ describe('KYC Testing', () => {
   });
 
   it('rejects KYC submission with missing required fields', async () => {
-    await expect(
-      kycCollector.submitKYC('user-2', { fullName: 'Incomplete' })
-    ).rejects.toThrow(/Missing required KYC fields/);
+    await expect(kycCollector.submitKYC('user-2', { fullName: 'Incomplete' })).rejects.toThrow(
+      /Missing required KYC fields/
+    );
   });
 
   it('retrieves an existing KYC record', async () => {
@@ -99,33 +103,49 @@ describe('KYC Testing', () => {
 // ── 2. AML testing ────────────────────────────────────────────────────────────
 describe('AML Testing', () => {
   it('clears a normal transaction', async () => {
-    const tx = { id: 'tx-1', senderId: 'user-ok', amount: '50', createdAt: new Date().toISOString() };
+    const tx = {
+      id: 'tx-1',
+      senderId: 'user-ok',
+      amount: '50',
+      createdAt: new Date().toISOString(),
+    };
     const result = await amlMonitor.screenTransaction(tx, []);
-    expect(result.alerts.filter(a => a.severity === 'HIGH')).toHaveLength(0);
+    expect(result.alerts.filter((a) => a.severity === 'HIGH')).toHaveLength(0);
   });
 
   it('flags a large transaction (>= 10000)', async () => {
-    const tx = { id: 'tx-2', senderId: 'user-big', amount: '15000', createdAt: new Date().toISOString() };
+    const tx = {
+      id: 'tx-2',
+      senderId: 'user-big',
+      amount: '15000',
+      createdAt: new Date().toISOString(),
+    };
     const result = await amlMonitor.screenTransaction(tx, []);
-    expect(result.alerts.some(a => a.ruleId === 'LARGE_TX')).toBe(true);
+    expect(result.alerts.some((a) => a.ruleId === 'LARGE_TX')).toBe(true);
   });
 
   it('flags structuring (amount just below threshold)', async () => {
-    const tx = { id: 'tx-3', senderId: 'user-struct', amount: '9500', createdAt: new Date().toISOString() };
+    const tx = {
+      id: 'tx-3',
+      senderId: 'user-struct',
+      amount: '9500',
+      createdAt: new Date().toISOString(),
+    };
     const result = await amlMonitor.screenTransaction(tx, []);
-    expect(result.alerts.some(a => a.ruleId === 'STRUCTURING')).toBe(true);
+    expect(result.alerts.some((a) => a.ruleId === 'STRUCTURING')).toBe(true);
   });
 
   it('flags rapid succession transactions', async () => {
     const now = new Date();
     const history = Array.from({ length: 5 }, (_, i) => ({
-      id: `h-${i}`, senderId: 'user-rapid',
+      id: `h-${i}`,
+      senderId: 'user-rapid',
       amount: '100',
       createdAt: new Date(now - i * 60000).toISOString(),
     }));
     const tx = { id: 'tx-4', senderId: 'user-rapid', amount: '100', createdAt: now.toISOString() };
     const result = await amlMonitor.screenTransaction(tx, history);
-    expect(result.alerts.some(a => a.ruleId === 'RAPID_SUCCESSION')).toBe(true);
+    expect(result.alerts.some((a) => a.ruleId === 'RAPID_SUCCESSION')).toBe(true);
   });
 });
 
@@ -170,7 +190,7 @@ describe('Audit Trail', () => {
     await complianceAudit.log('AML_ALERT', 'user-aml', { ruleId: 'LARGE_TX' });
     await complianceAudit.log('KYC_SUBMITTED', 'user-aml', {});
     const trail = await complianceAudit.getTrail({ eventType: 'AML_ALERT' });
-    expect(trail.every(e => e.eventType === 'AML_ALERT')).toBe(true);
+    expect(trail.every((e) => e.eventType === 'AML_ALERT')).toBe(true);
   });
 });
 
@@ -197,5 +217,118 @@ describe('Sanctions Checking', () => {
   it('clears a non-sanctioned individual', async () => {
     const result = await sanctionsChecker.check('Jane Doe', 'US');
     expect(result.hit).toBe(false);
+  });
+});
+
+// ── 7. SAR generation (issue #504) ───────────────────────────────────────────
+describe('SAR Generation', () => {
+  it('generates a SAR report with correct structure', async () => {
+    await complianceAudit.log('AML_ALERT', 'user-sar', {
+      alerts: [
+        { ruleId: 'STRUCTURING', severity: 'HIGH', description: 'Amount just below threshold' },
+      ],
+    });
+
+    const report = await complianceReporting.generateSAR();
+
+    expect(report.id).toMatch(/^SAR-/);
+    expect(report.reportType).toBe('SAR');
+    expect(report.filingDate).toBeDefined();
+    expect(report.period.from).toBeDefined();
+    expect(report.period.to).toBeDefined();
+    expect(report.reportingEntity.institutionName).toBe('FuTuRe Remittance Platform');
+    expect(Array.isArray(report.suspiciousActivities)).toBe(true);
+    expect(typeof report.totalActivities).toBe('number');
+  });
+
+  it('includes activity entries for HIGH severity AML alerts', async () => {
+    await complianceAudit.log('AML_ALERT', 'user-sar-2', {
+      alerts: [{ ruleId: 'LARGE_TX', severity: 'HIGH', description: 'Large transaction' }],
+    });
+
+    const report = await complianceReporting.generateSAR();
+
+    const entry = report.suspiciousActivities.find((a) => a.userId === 'user-sar-2');
+    expect(entry).toBeDefined();
+    expect(entry.activityType).toBe('LARGE_TX');
+  });
+
+  it('excludes MEDIUM severity alerts from SAR', async () => {
+    await complianceAudit.log('AML_ALERT', 'user-sar-medium', {
+      alerts: [{ ruleId: 'STRUCTURING', severity: 'MEDIUM', description: 'Structuring' }],
+    });
+
+    const report = await complianceReporting.generateSAR();
+    const entry = report.suspiciousActivities.find((a) => a.userId === 'user-sar-medium');
+    expect(entry).toBeUndefined();
+  });
+});
+
+// ── 8. CTR generation (issue #504) ───────────────────────────────────────────
+describe('CTR Generation', () => {
+  it('generates a CTR report with correct structure', async () => {
+    const txs = [
+      {
+        transactionId: 'tx-ctr-1',
+        amount: '15000',
+        date: new Date().toISOString(),
+        userId: 'user-ctr-1',
+      },
+      {
+        transactionId: 'tx-ctr-2',
+        amount: '12500',
+        date: new Date().toISOString(),
+        userId: 'user-ctr-2',
+      },
+    ];
+
+    const report = await complianceReporting.generateCTR({ transactions: txs });
+
+    expect(report.id).toMatch(/^CTR-/);
+    expect(report.reportType).toBe('CTR');
+    expect(report.reportingEntity.institutionName).toBe('FuTuRe Remittance Platform');
+    expect(report.transactions).toHaveLength(2);
+    expect(report.totalTransactions).toBe(2);
+    expect(report.totalAmount).toBe(27500);
+  });
+
+  it('filters out transactions below $10,000', async () => {
+    const txs = [
+      { transactionId: 'tx-small', amount: '500', date: new Date().toISOString(), userId: 'u1' },
+      { transactionId: 'tx-large', amount: '20000', date: new Date().toISOString(), userId: 'u2' },
+    ];
+
+    const report = await complianceReporting.generateCTR({ transactions: txs });
+
+    expect(report.transactions).toHaveLength(1);
+    expect(report.transactions[0].transactionId).toBe('tx-large');
+  });
+
+  it('returns empty CTR when no qualifying transactions exist', async () => {
+    const report = await complianceReporting.generateCTR({ transactions: [] });
+    expect(report.transactions).toHaveLength(0);
+    expect(report.totalAmount).toBe(0);
+  });
+});
+
+// ── 9. toCsv helper (issue #504) ─────────────────────────────────────────────
+describe('toCsv helper', () => {
+  it('produces a valid CSV string', () => {
+    const rows = [
+      { id: 'tx-1', amount: 15000, userId: 'u-1' },
+      { id: 'tx-2', amount: 20000, userId: 'u-2' },
+    ];
+    const csv = complianceReporting.toCsv(['id', 'amount', 'userId'], rows);
+    const lines = csv.split('\n');
+
+    expect(lines[0]).toBe('id,amount,userId');
+    expect(lines[1]).toContain('tx-1');
+    expect(lines[2]).toContain('tx-2');
+  });
+
+  it('handles missing fields with empty string', () => {
+    const rows = [{ id: 'tx-1' }];
+    const csv = complianceReporting.toCsv(['id', 'amount'], rows);
+    expect(csv).toContain('""');
   });
 });

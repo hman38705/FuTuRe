@@ -4,7 +4,7 @@ import pkg from '@prisma/client';
 const { PrismaClient } = pkg;
 import logger from '../config/logger.js';
 import { getConfig } from '../config/env.js';
-import { setupSoftDeleteMiddleware } from './softDelete.js';
+import { createSoftDeleteExtension } from './softDelete.js';
 
 const { Pool } = pg;
 
@@ -44,9 +44,9 @@ const pool = new Pool({
 
 // Layer 1 — PostgreSQL server-side timeout.
 pool.on('connect', (client) => {
-  client.query(`SET statement_timeout = ${QUERY_TIMEOUT_MS}`).catch((err) =>
-    logger.error('db.statement_timeout.set.failed', { error: err.message })
-  );
+  client
+    .query(`SET statement_timeout = ${QUERY_TIMEOUT_MS}`)
+    .catch((err) => logger.error('db.statement_timeout.set.failed', { error: err.message }));
 });
 
 const adapter = new PrismaPg(pool);
@@ -65,8 +65,8 @@ const baseClient = new PrismaClient({
   log: prismaLogConfig,
 });
 
-// Layer 2 — Node.js-side timeout via Prisma client extension.
-const prisma = baseClient.$extends({
+// Layer 2 — soft-delete filter + Node.js-side timeout via Prisma client extensions.
+const prisma = baseClient.$extends(createSoftDeleteExtension()).$extends({
   query: {
     $allModels: {
       async $allOperations({ args, query }) {
@@ -83,7 +83,7 @@ const prisma = baseClient.$extends({
 });
 
 baseClient.$on('error', (e) => logger.error('db.error', { message: e.message, target: e.target }));
-baseClient.$on('warn',  (e) => logger.warn('db.warn',  { message: e.message, target: e.target }));
+baseClient.$on('warn', (e) => logger.warn('db.warn', { message: e.message, target: e.target }));
 
 if (queryLogEnabled) {
   baseClient.$on('query', (e) => {
@@ -94,9 +94,6 @@ if (queryLogEnabled) {
     });
   });
 }
-
-// Setup soft delete middleware
-setupSoftDeleteMiddleware(prisma);
 
 export async function connectDB() {
   const maxAttempts = 5;
@@ -124,7 +121,7 @@ export async function connectDB() {
         error: err.message,
       });
 
-      await new Promise(resolve => setTimeout(resolve, delayMs));
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
 }

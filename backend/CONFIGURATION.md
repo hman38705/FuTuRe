@@ -110,10 +110,8 @@ To verify a webhook signature:
 import { createHmac } from 'crypto';
 
 function verifyWebhookSignature(payload, signature, secret) {
-  const computed = createHmac('sha256', secret)
-    .update(JSON.stringify(payload))
-    .digest('hex');
-  
+  const computed = createHmac('sha256', secret).update(JSON.stringify(payload)).digest('hex');
+
   return computed === signature;
 }
 
@@ -148,9 +146,9 @@ For production deployments running multiple Node.js instances, a connection pool
 
 ### Environment variables
 
-| Variable | Description |
-|---|---|
-| `DATABASE_URL` | Direct database URL (used for migrations and health checks) |
+| Variable            | Description                                                      |
+| ------------------- | ---------------------------------------------------------------- |
+| `DATABASE_URL`      | Direct database URL (used for migrations and health checks)      |
 | `DATABASE_POOL_URL` | PgBouncer pooler URL. When set, Prisma uses this for all queries |
 
 ### PgBouncer setup
@@ -184,22 +182,22 @@ The backend includes CDN middleware (`backend/src/cdn/index.js`) that sets `Cach
 
 ### Environment variables
 
-| Variable | Description | Default |
-|---|---|---|
-| `CDN_ENABLED` | Enable CDN integration | `false` |
-| `CDN_URL` | Primary CDN origin URL | — |
-| `CDN_SECONDARY_URL` | Fallback CDN origin URL | — |
-| `CDN_CACHE_MAX_AGE_S` | Default cache TTL in seconds (used for API responses) | `86400` |
-| `CDN_REGIONS` | Comma-separated list of CDN regions | `us-east-1` |
-| `VITE_CDN_URL` | CDN base URL for frontend asset paths (set at build time) | `/` |
+| Variable              | Description                                               | Default     |
+| --------------------- | --------------------------------------------------------- | ----------- |
+| `CDN_ENABLED`         | Enable CDN integration                                    | `false`     |
+| `CDN_URL`             | Primary CDN origin URL                                    | —           |
+| `CDN_SECONDARY_URL`   | Fallback CDN origin URL                                   | —           |
+| `CDN_CACHE_MAX_AGE_S` | Default cache TTL in seconds (used for API responses)     | `86400`     |
+| `CDN_REGIONS`         | Comma-separated list of CDN regions                       | `us-east-1` |
+| `VITE_CDN_URL`        | CDN base URL for frontend asset paths (set at build time) | `/`         |
 
 ### Cache-Control strategy
 
-| Path pattern | Header | Rationale |
-|---|---|---|
-| `/assets/*` | `Cache-Control: public, max-age=31536000, immutable` | Vite produces content-hashed filenames; safe to cache forever |
-| `*.html` (e.g. `index.html`) | `Cache-Control: no-cache` | Must always revalidate so clients pick up new asset hashes |
-| `/api/*` | `Cache-Control: public, max-age=30, stale-while-revalidate=60` | Short TTL for API data |
+| Path pattern                 | Header                                                         | Rationale                                                     |
+| ---------------------------- | -------------------------------------------------------------- | ------------------------------------------------------------- |
+| `/assets/*`                  | `Cache-Control: public, max-age=31536000, immutable`           | Vite produces content-hashed filenames; safe to cache forever |
+| `*.html` (e.g. `index.html`) | `Cache-Control: no-cache`                                      | Must always revalidate so clients pick up new asset hashes    |
+| `/api/*`                     | `Cache-Control: public, max-age=30, stale-while-revalidate=60` | Short TTL for API data                                        |
 
 ### Enabling CDN in production
 
@@ -212,10 +210,40 @@ The middleware also emits `Surrogate-Control` headers for Fastly/Varnish and `Va
 
 ## Prisma query logging
 
-| Variable | Behaviour |
-|---|---|
-| `APP_ENV=development` | Query logging always enabled |
+| Variable                | Behaviour                                                                             |
+| ----------------------- | ------------------------------------------------------------------------------------- |
+| `APP_ENV=development`   | Query logging always enabled                                                          |
 | `PRISMA_QUERY_LOG=true` | Enables query logging in any environment (useful for debugging in staging/production) |
 
 Query events are emitted at the `debug` log level and include the query text, bound parameters, and execution duration in milliseconds.
 
+---
+
+## Data Retention Policy (GDPR)
+
+The platform complies with GDPR Article 15 (right of access) and Article 17 (right to erasure).
+
+### Data export
+
+Users may request a full export of their personal data at any time via `GET /api/auth/data-export`. The response is a JSON document containing their profile, settings, KYC record, transactions, and notifications. Password hashes are excluded from the export.
+
+### Account deletion
+
+When a user calls `DELETE /api/auth/account`, the following happens immediately:
+
+1. **Soft-delete** — the user's `deletedAt` timestamp is set to the current time.
+2. **Anonymisation** — `publicKey` is replaced with `ANONYMIZED-<id_prefix>`, `username` with `deleted-<id_prefix>`, and `passwordHash` is cleared.
+3. **KYC redaction** — all KYC fields (`fullName`, `dateOfBirth`, `nationality`, `documentType`, `documentNumber`, `address`, `phoneNumber`, `email`) are replaced with `[REDACTED]`.
+4. **Transaction memo clearing** — `memo` fields on all transactions associated with the user are set to `null`. Transaction amounts and hashes are retained for audit and financial compliance purposes.
+
+The response includes a `scheduledPermanentDeletion` timestamp 30 days from the deletion request. A background job (to be configured separately) should permanently remove the anonymised record after this date.
+
+### Retention periods
+
+| Data category                         | Retention period               | Basis                          |
+| ------------------------------------- | ------------------------------ | ------------------------------ |
+| Transaction records (amounts, hashes) | 7 years                        | Financial regulation (AML/KYC) |
+| Audit logs                            | 5 years                        | Regulatory compliance          |
+| Anonymised user record                | 30 days after deletion request | GDPR cooling-off period        |
+| KYC documents                         | 5 years after account closure  | AML regulations                |
+| Session / refresh tokens              | 7 days (cookie `maxAge`)       | Operational necessity          |

@@ -264,6 +264,102 @@ router.get('/reports', authMiddleware, async (req, res) => {
   res.json(reports);
 });
 
+// ── Regulatory Reports (Admin Only) ──────────────────────────────────────────
+
+/**
+ * @swagger
+ * /api/compliance/reports/sar:
+ *   get:
+ *     summary: Generate and download a Suspicious Activity Report (admin only)
+ *     tags: [Compliance]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema: { type: string, enum: [json, csv], default: json }
+ *       - in: query
+ *         name: from
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: to
+ *         schema: { type: string, format: date-time }
+ *     responses:
+ *       200:
+ *         description: SAR report
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin access required
+ */
+router.get('/reports/sar', requireAdmin, async (req, res) => {
+  try {
+    const { format = 'json', from, to } = req.query;
+    const report = await complianceReporting.generateSAR({ from, to });
+
+    if (format === 'csv') {
+      const csv = complianceReporting.toCsv(
+        ['activityDate', 'activityType', 'description', 'userId'],
+        report.suspiciousActivities
+      );
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${report.id}.csv"`);
+      return res.send(csv);
+    }
+
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/compliance/reports/ctr:
+ *   get:
+ *     summary: Generate and download a Currency Transaction Report (admin only)
+ *     tags: [Compliance]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: query
+ *         name: format
+ *         schema: { type: string, enum: [json, csv], default: json }
+ *       - in: query
+ *         name: from
+ *         schema: { type: string, format: date-time }
+ *       - in: query
+ *         name: to
+ *         schema: { type: string, format: date-time }
+ *     responses:
+ *       200:
+ *         description: CTR report
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin access required
+ */
+router.get('/reports/ctr', requireAdmin, async (req, res) => {
+  try {
+    const { format = 'json', from, to } = req.query;
+    const report = await complianceReporting.generateCTR({ from, to });
+
+    if (format === 'csv') {
+      const csv = complianceReporting.toCsv(
+        ['transactionId', 'amount', 'date', 'userId'],
+        report.transactions
+      );
+      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Disposition', `attachment; filename="${report.id}.csv"`);
+      return res.send(csv);
+    }
+
+    res.json(report);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ── AML Alerts Dashboard (Admin Only) ────────────────────────────────────────
 
 // List all AML alerts with pagination
@@ -271,10 +367,10 @@ router.get('/aml/alerts', requireAdmin, async (req, res) => {
   try {
     const { page = 1, limit = 20, severity, reviewed } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
-    
+
     const where = {};
     if (severity) where.severity = severity;
-    
+
     const alerts = await prisma.aMLAlert.findMany({
       where,
       include: {
@@ -296,9 +392,9 @@ router.get('/aml/alerts', requireAdmin, async (req, res) => {
       skip,
       take: parseInt(limit),
     });
-    
+
     const total = await prisma.aMLAlert.count({ where });
-    
+
     res.json({
       alerts,
       pagination: {
@@ -318,7 +414,7 @@ router.patch('/aml/alerts/:id/review', requireAdmin, async (req, res) => {
   try {
     const { id } = req.params;
     const { notes } = req.body;
-    
+
     // For now, we'll log the review action in the audit trail
     // In a production system, you'd add a 'reviewed' field to the AMLAlert model
     await complianceAudit.log('AML_ALERT_REVIEWED', req.user.id, {
@@ -327,7 +423,7 @@ router.patch('/aml/alerts/:id/review', requireAdmin, async (req, res) => {
       notes: notes || '',
       reviewedAt: new Date().toISOString(),
     });
-    
+
     res.json({ success: true, message: 'Alert marked as reviewed' });
   } catch (err) {
     res.status(500).json({ error: err.message });

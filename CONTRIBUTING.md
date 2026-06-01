@@ -10,6 +10,7 @@ Thanks for taking the time to contribute. This guide covers everything you need 
 - Git
 
 Optional but recommended:
+
 - Docker + Docker Compose (simplifies database setup)
 - [k6](https://k6.io/docs/get-started/installation/) for load tests
 
@@ -68,10 +69,10 @@ npm run dev
 
 This starts both servers concurrently:
 
-| Service  | URL                    |
-|----------|------------------------|
-| Backend  | http://localhost:3001  |
-| Frontend | http://localhost:3000  |
+| Service  | URL                   |
+| -------- | --------------------- |
+| Backend  | http://localhost:3001 |
+| Frontend | http://localhost:3000 |
 
 The backend uses `--watch` for hot-reload. The frontend uses Vite HMR.
 
@@ -149,6 +150,7 @@ npm run dev:backend
 ## PR Review Process
 
 1. Fork the repo and create a branch from `main`:
+
    ```bash
    git checkout -b feat/your-feature-name
    ```
@@ -156,6 +158,7 @@ npm run dev:backend
 2. Make your changes. Keep commits focused — one logical change per commit.
 
 3. Ensure all checks pass locally before pushing:
+
    ```bash
    npm run test:coverage
    npm audit --audit-level=high
@@ -179,3 +182,85 @@ npm run dev:backend
 - [ ] No new high/critical vulnerabilities (`npm audit --audit-level=high`)
 - [ ] Code formatted with `npm run format`
 - [ ] PR description explains the change clearly
+
+---
+
+## Branch Naming
+
+Use one of these prefixes followed by a short, kebab-cased description:
+
+| Prefix      | Use for                                     |
+| ----------- | ------------------------------------------- |
+| `feat/`     | New features                                |
+| `fix/`      | Bug fixes                                   |
+| `docs/`     | Documentation-only changes                  |
+| `chore/`    | Dependency bumps, tooling, config           |
+| `refactor/` | Code restructuring without behaviour change |
+| `test/`     | Adding or fixing tests                      |
+
+Examples:
+
+```
+feat/gdpr-data-export
+fix/refresh-token-expiry
+docs/security-guide
+```
+
+---
+
+## Code Style
+
+The project uses ESLint and Prettier. Run the formatter and linter before pushing:
+
+```bash
+npm run format   # applies Prettier
+npm run lint     # ESLint check
+```
+
+Key conventions:
+
+- ES modules (`import`/`export`) throughout — no `require()`.
+- Async/await preferred over `.then()` chains.
+- No unused variables; `_` prefix for intentionally unused parameters.
+- Keep functions small and single-purpose; avoid deeply nested callbacks.
+
+---
+
+## Commit Message Format
+
+Follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
+
+```
+<type>(<scope>): <short summary>
+
+[optional body — explain *why*, not *what*]
+
+[optional footer — e.g. Closes #123]
+```
+
+Types: `feat`, `fix`, `docs`, `chore`, `refactor`, `test`, `perf`.
+
+Examples:
+
+```
+feat(auth): add GDPR data-export endpoint
+
+Implements Article 15 right-of-access requirement.
+Closes #503
+
+fix(compliance): filter MEDIUM alerts from SAR reports
+```
+
+---
+
+## Good First Issues
+
+Issues labelled **`good first issue`** are well-scoped, self-contained tasks with clear acceptance criteria — ideal if you are new to the codebase.
+
+To find them: go to [Issues](https://github.com/Ethereal-Future/FuTuRe/issues?q=is%3Aopen+label%3A%22good+first+issue%22) and filter by the `good first issue` label.
+
+Before starting:
+
+1. Comment on the issue to let others know you are working on it.
+2. Ask any clarifying questions in the issue thread before writing code.
+3. Keep the PR focused on the acceptance criteria — avoid unrelated refactors.

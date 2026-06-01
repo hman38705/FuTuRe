@@ -1,86 +1,75 @@
 /**
- * Soft Delete Middleware for Prisma
- * Automatically filters out soft-deleted records from queries
- * Allows admin queries to access soft-deleted records via includeDeleted flag
+ * Soft Delete extension for Prisma (Prisma 5+ query extension API).
+ * Automatically filters out soft-deleted records from queries.
+ * Pass { where: { includeDeleted: true } } to bypass the filter in admin queries.
  */
 
-export function setupSoftDeleteMiddleware(prisma) {
-  prisma.$use(async (params, next) => {
-    // Skip middleware for migrations and internal operations
-    if (params.model === null) {
-      return next(params);
-    }
+const SOFT_DELETE_MODELS = new Set(['User', 'Transaction']);
 
-    // Models that support soft delete
-    const softDeleteModels = ['User', 'Transaction'];
+const FILTER_ACTIONS = new Set([
+  'findUnique',
+  'findUniqueOrThrow',
+  'findFirst',
+  'findFirstOrThrow',
+  'findMany',
+]);
+const UPDATE_ACTIONS = new Set(['update', 'updateMany']);
 
-    // Check if this is a soft-delete-enabled model
-    if (!softDeleteModels.includes(params.model)) {
-      return next(params);
-    }
+export function createSoftDeleteExtension() {
+  return {
+    query: {
+      $allModels: {
+        async $allOperations({ model, operation, args, query }) {
+          if (!SOFT_DELETE_MODELS.has(model)) {
+            return query(args);
+          }
 
-    // Check if includeDeleted flag is set (for admin queries)
-    const includeDeleted = params.args?.includeDeleted === true;
+          const includeDeleted = args?.where?.includeDeleted === true;
 
-    // Remove the includeDeleted flag from args before passing to Prisma
-    if (params.args?.includeDeleted !== undefined) {
-      delete params.args.includeDeleted;
-    }
+          // Strip the custom flag before passing to Prisma
+          if (args?.where?.includeDeleted !== undefined) {
+            const { includeDeleted: _stripped, ...rest } = args.where;
+            args = { ...args, where: rest };
+          }
 
-    // For read operations, automatically filter out soft-deleted records
-    if (['findUnique', 'findUniqueOrThrow', 'findFirst', 'findMany'].includes(params.action)) {
-      if (!includeDeleted) {
-        // Add filter to exclude soft-deleted records
-        params.args.where = {
-          ...params.args.where,
-          deletedAt: null,
-        };
-      }
-    }
+          if (!includeDeleted) {
+            if (FILTER_ACTIONS.has(operation) || UPDATE_ACTIONS.has(operation)) {
+              args = { ...args, where: { ...args.where, deletedAt: null } };
+            }
 
-    // For update operations, prevent updating soft-deleted records
-    if (['update', 'updateMany'].includes(params.action)) {
-      if (!includeDeleted) {
-        params.args.where = {
-          ...params.args.where,
-          deletedAt: null,
-        };
-      }
-    }
+            if (operation === 'delete') {
+              // Intercept hard delete → soft delete
+              return query({ ...args, data: { deletedAt: new Date() } });
+            }
 
-    // For delete operations, perform soft delete instead of hard delete
-    if (params.action === 'delete') {
-      params.action = 'update';
-      params.args.data = { deletedAt: new Date() };
-    }
+            if (operation === 'deleteMany') {
+              return query({ ...args, data: { deletedAt: new Date() } });
+            }
+          }
 
-    if (params.action === 'deleteMany') {
-      params.action = 'updateMany';
-      params.args.data = { deletedAt: new Date() };
-    }
-
-    return next(params);
-  });
+          return query(args);
+        },
+      },
+    },
+  };
 }
 
 /**
- * Helper function to permanently delete a soft-deleted record
- * Should only be used by admin operations or data cleanup jobs
+ * Permanently delete a soft-deleted record (admin/cleanup use only).
  */
 export async function hardDelete(prisma, model, where) {
-  return prisma[model.toLowerCase()].$executeRawUnsafe(
-    `DELETE FROM "${model}" WHERE ${Object.keys(where)
-      .map((key) => `"${key}" = $1`)
-      .join(' AND ')}`,
+  const keys = Object.keys(where);
+  return prisma.$executeRawUnsafe(
+    `DELETE FROM "${model}" WHERE ${keys.map((k, i) => `"${k}" = $${i + 1}`).join(' AND ')}`,
     ...Object.values(where)
   );
 }
 
 /**
- * Helper function to restore a soft-deleted record
+ * Restore a soft-deleted record.
  */
 export async function restoreDeleted(prisma, model, where) {
-  return prisma[model.toLowerCase()].update({
+  return prisma[model.charAt(0).toLowerCase() + model.slice(1)].update({
     where,
     data: { deletedAt: null },
   });

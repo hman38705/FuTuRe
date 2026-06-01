@@ -24,6 +24,24 @@ export default [
     },
   },
   {
+    files: ['backend/tests/**/*.js', 'testing/**/*.js'],
+    languageOptions: {
+      ecmaVersion: 2022,
+      sourceType: 'module',
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+        setTimeout: 'readonly',
+        clearTimeout: 'readonly',
+      },
+    },
+    rules: {
+      'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    },
+  },
+  {
     ignores: ['**/node_modules/**', '**/dist/**', '**/build/**'],
   },
 ];

@@ -28,22 +28,6 @@ model User {
   auditLogs               AuditLog[]
 
   @@index([deletedAt])
-
-  id                     String                  @id @default(uuid())
-  publicKey              String                  @unique
-  username               String                  @unique
-  passwordHash           String
-  createdAt              DateTime                @default(now())
-  updatedAt              DateTime                @updatedAt
-  settings               Setting?
-  sentTxs                Transaction[]           @relation("sender")
-  receivedTxs            Transaction[]           @relation("recipient")
-  sentStreams            PaymentStream[]         @relation("streamSender")
-  receivedStreams        PaymentStream[]         @relation("streamRecipient")
-  notifications          Notification[]
-  notificationPreference NotificationPreference?
-  kycRecord              KYCRecord?
-  amlAlerts              AMLAlert[]
 }
 
 model Transaction {
@@ -52,15 +36,12 @@ model Transaction {
   assetCode     String         @default("XLM")
   amount        Decimal
   ledger        Int?
-  successful    Boolean         @default(true)
-  createdAt     DateTime        @default(now())
-  updatedAt     DateTime        @updatedAt
-  deletedAt     DateTime?
-
   successful    Boolean        @default(true)
   memo          String?
-  memoType      String?        // 'text' | 'id'
+  memoType      String?
   createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  deletedAt     DateTime?
   senderId      String
   sender        User           @relation("sender", fields: [senderId], references: [id])
   recipientId   String
@@ -69,13 +50,9 @@ model Transaction {
   retryStatus   String?
   lastRetryAt   DateTime?
   retryHistory  RetryAttempt[]
-
-  @@index([deletedAt])
-
-
-  @@index([deletedAt])
   amlAlerts     AMLAlert[]
 
+  @@index([deletedAt])
   @@index([senderId, createdAt])
   @@index([recipientId, createdAt])
 }
@@ -132,16 +109,9 @@ model PaymentStream {
 
   @@index([senderId])
   @@index([recipientId])
-}
-
   @@index([status, lastProcessedAt])
 }
 
-  @@index([senderId])
-  @@index([recipientId])
-}
-  @@index([status, lastProcessedAt])
-}
 model Notification {
   id        String   @id @default(uuid())
   userId    String
@@ -171,18 +141,6 @@ model NotificationPreference {
   quietHoursEnd    Int      @default(7)
   typeOverrides    Json?
   updatedAt        DateTime @updatedAt
-
-  id              String   @id @default(uuid())
-  userId          String   @unique
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  emailEnabled    Boolean  @default(true)
-  pushEnabled     Boolean  @default(true)
-  smsEnabled      Boolean  @default(false)
-  inAppEnabled    Boolean  @default(true)
-  quietHoursStart Int      @default(22)
-  quietHoursEnd   Int      @default(7)
-  typeOverrides   Json?
-  updatedAt       DateTime @updatedAt
 }
 
 model KYCRecord {
@@ -217,11 +175,6 @@ model AMLAlert {
   description   String
   riskScore     Int
   riskLevel     String
-  createdAt     DateTime @default(now())
-
-  @@index([transactionId])
-  @@index([userId])
-
   createdAt     DateTime    @default(now())
 
   @@index([transactionId])
@@ -243,8 +196,6 @@ model AuditLog {
   severity      String   @default("INFO")
 
   @@index([timestamp])
-  @@index([status, expiresAt])
-  @@index([transactionId])
   @@index([userId])
   @@index([actionType])
   @@index([severity])

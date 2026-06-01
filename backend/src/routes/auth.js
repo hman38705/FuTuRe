@@ -8,7 +8,13 @@ import { requireAuth } from '../middleware/auth.js';
 import { consumePendingCredentials } from '../recovery/recoveryStore.js';
 import prisma from '../db/client.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
-import { recordFailedLogin, isAccountLocked, unlockAccount, clearFailedAttempts, getLockoutDuration } from '../security/accountLockout.js';
+import {
+  recordFailedLogin,
+  isAccountLocked,
+  unlockAccount,
+  clearFailedAttempts,
+  getLockoutDuration,
+} from '../security/accountLockout.js';
 import { getClientIP } from '../middleware/rateLimiter.js';
 import logger from '../config/logger.js';
 import { csrfTokenEndpoint } from '../middleware/csrf.js';
@@ -320,7 +326,12 @@ router.post('/mfa/setup', requireAuth, async (req, res) => {
   try {
     const { secret, qrCode } = mfaManager.generateSecret(req.user.sub);
     const backupCodes = mfaManager.enableMFA(req.user.sub, secret);
-    res.json({ secret, qrCode, backupCodes, message: 'Scan the QR code with your authenticator app' });
+    res.json({
+      secret,
+      qrCode,
+      backupCodes,
+      message: 'Scan the QR code with your authenticator app',
+    });
   } catch (error) {
     res.status(500).json({ error: error.message });
   }
@@ -360,10 +371,10 @@ router.get('/oauth/google', (req, res) => {
   const clientId = getConfig().oauth.googleClientId;
   const redirectUri = `${getConfig().server.baseUrl}/api/auth/oauth/google/callback`;
   const state = randomBytes(16).toString('hex');
-  
+
   // Store state in session/cookie for verification
   res.cookie('oauth_state', state, { httpOnly: true, maxAge: 10 * 60 * 1000 });
-  
+
   const authUrl = oauth2Provider.getGoogleAuthURL(clientId, redirectUri, state);
   res.redirect(authUrl);
 });
@@ -395,7 +406,7 @@ router.get('/oauth/google', (req, res) => {
 router.get('/oauth/google/callback', async (req, res) => {
   const { code, state } = req.query;
   const storedState = req.cookies.oauth_state;
-  
+
   if (!code || !state || state !== storedState) {
     return res.status(400).json({ error: 'Invalid state or authorization code' });
   }
@@ -404,51 +415,175 @@ router.get('/oauth/google/callback', async (req, res) => {
     const clientId = getConfig().oauth.googleClientId;
     const clientSecret = getConfig().oauth.googleClientSecret;
     const redirectUri = `${getConfig().server.baseUrl}/api/auth/oauth/google/callback`;
-    
+
     // Exchange code for tokens
-    const googleTokens = await oauth2Provider.exchangeGoogleCode(code, clientId, clientSecret, redirectUri);
-    
+    const googleTokens = await oauth2Provider.exchangeGoogleCode(
+      code,
+      clientId,
+      clientSecret,
+      redirectUri
+    );
+
     // Get user info
     const userInfo = await oauth2Provider.getGoogleUserInfo(googleTokens.access_token);
-    
+
     // Find or create user
     let user = findUser(userInfo.email);
     if (!user) {
       user = createUser(userInfo.email, ''); // OAuth users don't have passwords
     }
-    
+
     // Generate JWT tokens
     const payload = { sub: user.id, username: user.username };
     const accessToken = signAccessToken(payload);
     const refreshToken = signRefreshToken(payload);
-    
+
     // Redirect to frontend with tokens
     const frontendUrl = getConfig().frontend.baseUrl;
-    res.redirect(`${frontendUrl}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`);
+    res.redirect(
+      `${frontendUrl}/auth/callback?accessToken=${accessToken}&refreshToken=${refreshToken}`
+    );
   } catch (error) {
     res.status(400).json({ error: error.message });
   }
 });
 
-// DELETE /api/auth/account
-router.delete('/account', requireAuth, async (req, res) => {
+/**
+ * @swagger
+ * /api/auth/data-export:
+ *   get:
+ *     summary: Export all personal data for the authenticated user (GDPR Art. 15)
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: JSON file containing all user data
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: User not found
+ */
+router.get('/data-export', requireAuth, async (req, res) => {
+  const userId = req.user.sub;
   try {
-    const userId = req.user.sub;
-    
-    // Soft delete the user (sets deletedAt timestamp)
-    const deletedUser = await prisma.user.update({
+    const user = await prisma.user.findUnique({
       where: { id: userId },
-      data: { deletedAt: new Date() },
+      include: {
+        settings: true,
+        kycRecord: true,
+        sentTxs: {
+          select: {
+            id: true,
+            hash: true,
+            assetCode: true,
+            amount: true,
+            memo: true,
+            createdAt: true,
+            recipientId: true,
+          },
+        },
+        receivedTxs: {
+          select: {
+            id: true,
+            hash: true,
+            assetCode: true,
+            amount: true,
+            memo: true,
+            createdAt: true,
+            senderId: true,
+          },
+        },
+        notifications: {
+          select: {
+            id: true,
+            type: true,
+            channel: true,
+            title: true,
+            body: true,
+            createdAt: true,
+            read: true,
+          },
+        },
+      },
+    });
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    const { passwordHash: _omit, ...exportData } = user;
+
+    res.setHeader('Content-Disposition', 'attachment; filename="data-export.json"');
+    res.json({ exportedAt: new Date().toISOString(), data: exportData });
+  } catch (error) {
+    logger.error({ err: error, userId }, 'data-export failed');
+    res.status(500).json({ error: 'Failed to export user data' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/account:
+ *   delete:
+ *     summary: Request account deletion and anonymise personal data (GDPR Art. 17)
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Account soft-deleted and data anonymised; permanent deletion in 30 days
+ *       401:
+ *         description: Unauthorized
+ *       404:
+ *         description: User not found
+ */
+router.delete('/account', requireAuth, async (req, res) => {
+  const userId = req.user.sub;
+  const ANON_PUBLIC_KEY = `ANONYMIZED-${userId.substring(0, 8)}`;
+  const ANON_USERNAME = `deleted-${userId.substring(0, 8)}`;
+  const PERMANENT_DELETE_DATE = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
+
+  try {
+    await prisma.$transaction(async (tx) => {
+      await tx.user.update({
+        where: { id: userId },
+        data: {
+          deletedAt: new Date(),
+          publicKey: ANON_PUBLIC_KEY,
+          username: ANON_USERNAME,
+          passwordHash: '',
+        },
+      });
+
+      await tx.kYCRecord.updateMany({
+        where: { userId },
+        data: {
+          fullName: '[REDACTED]',
+          dateOfBirth: new Date('1970-01-01'),
+          nationality: '[REDACTED]',
+          documentType: '[REDACTED]',
+          documentNumber: '[REDACTED]',
+          address: '[REDACTED]',
+          phoneNumber: null,
+          email: null,
+        },
+      });
+
+      await tx.transaction.updateMany({
+        where: { OR: [{ senderId: userId }, { recipientId: userId }] },
+        data: { memo: null },
+      });
     });
 
+    logger.info({ userId }, 'GDPR account deletion: data anonymised');
+
     res.json({
-      message: 'Account deleted successfully',
-      deletedAt: deletedUser.deletedAt,
+      message: 'Account scheduled for deletion. Personal data has been anonymised.',
+      scheduledPermanentDeletion: PERMANENT_DELETE_DATE.toISOString(),
     });
   } catch (error) {
     if (error.code === 'P2025') {
       return res.status(404).json({ error: 'User not found' });
     }
+    logger.error({ err: error, userId }, 'account deletion failed');
     res.status(500).json({ error: 'Failed to delete account' });
   }
 });
