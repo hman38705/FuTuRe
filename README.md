@@ -72,6 +72,7 @@ Frontend runs on http://localhost:3000
 ## Guides
 
 - [Security best practices for integrators](docs/guides/security.md) — API key storage, webhook verification, private key management, CSP, replay attacks, front-running
+- [Operational Runbook](docs/runbook.md) — Server restart, DB migration rollback, stream cancellation, IP unblock, incident response
 
 ## Contributing
 
