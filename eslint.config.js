@@ -42,6 +42,14 @@ export default [
     },
   },
   {
-    ignores: ['**/node_modules/**', '**/dist/**', '**/build/**'],
+    ignores: [
+      '**/node_modules/**',
+      '**/dist/**',
+      '**/build/**',
+      // Frontend has its own eslint.config.js; exclude from root backend config
+      'frontend/**',
+      // Standalone Node.js utility scripts — not part of the app bundle
+      'scripts/**',
+    ],
   },
 ];
