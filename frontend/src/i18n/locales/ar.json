@@ -1,7 +1,14 @@
 {
   "app": {
     "title": "منصة التحويلات المالية Stellar",
+    "description": "أرسل واستقبل مدفوعات XLM بأمان على شبكة Stellar",
     "loading": "جارٍ التحميل…"
+  },
+  "page": {
+    "dashboard": "لوحة التحكم | Stellar",
+    "settings": "إعدادات الحساب | Stellar",
+    "txLookup": "البحث عن معاملة | Stellar",
+    "compliance": "الامتثال | Stellar"
   },
   "nav": {
     "switchToLight": "التبديل إلى الوضع الفاتح",

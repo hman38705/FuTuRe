@@ -74,7 +74,8 @@ router.post('/account/create', accountCreateRateLimiter, async (req, res) => {
 });
 
 router.post('/account/fund', rules.publicKeyBody, validate, async (req, res) => {
-  if (!StellarService.isTestnet()) return res.status(403).json({ error: 'Only available on testnet' });
+  if (!StellarService.isTestnet())
+    return res.status(403).json({ error: 'Only available on testnet' });
   try {
     const result = await StellarService.fundAccount(req.body.publicKey);
     res.json(result);
@@ -134,7 +135,10 @@ router.post('/account/import', rules.importAccount, validate, async (req, res) =
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get('/account/:publicKey', rules.publicKeyParam, validate,
+router.get(
+  '/account/:publicKey',
+  rules.publicKeyParam,
+  validate,
   cacheMiddleware(TTL.BALANCE, (req) => cacheKeys.balance(req.params.publicKey)),
   async (req, res) => {
     try {
@@ -213,68 +217,137 @@ const paymentRateLimiter = createRateLimiter({
   message: 'Too many payment requests, please try again later.',
 });
 
-router.post('/payment/send', paymentRateLimiter, idempotencyMiddleware, requireKYC, rules.sendPayment, validate, optionalMFA, async (req, res) => {
-  try {
-    const { sourceSecret, destination, amount, assetCode, memo, memoType } = req.body;
-
-    // Sanctions screening — check sender and recipient before submitting to Stellar
-    const senderKey = StellarSDK.Keypair.fromSecret(sourceSecret).publicKey();
-    const senderKyc = await prisma.kYCRecord.findFirst({ where: { user: { publicKey: senderKey } } });
-    const senderName = senderKyc?.fullName ?? senderKey;
-
-    const [senderScreen, recipientScreen] = await Promise.all([
-      sanctionsChecker.check(senderName),
-      sanctionsChecker.check(destination),
-    ]);
-
-    if (senderScreen.hit || recipientScreen.hit) {
-      const reason = senderScreen.hit ? senderScreen.reason : recipientScreen.reason;
-      logger.warn('route.payment.sanctions_hit', { senderKey, destination, reason });
-      return res.status(403).json({ error: 'SANCTIONS_HIT', reason });
-    }
-
-    const result = await StellarService.sendPayment(sourceSecret, destination, amount, assetCode, memo, memoType, req.correlationId);
-
-    // AML monitoring — run asynchronously after payment succeeds
-    const txRecord = await prisma.transaction.findUnique({ where: { hash: result.hash } });
-    if (txRecord) {
-      const history = await prisma.transaction.findMany({
-        where: { senderId: txRecord.senderId, createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) } },
-        orderBy: { createdAt: 'desc' },
-      });
-      amlMonitor.screenTransaction(txRecord, history).catch((err) =>
-        logger.error('route.payment.aml_screen_failed', { hash: result.hash, error: err.message })
-      );
-    }
-
-    const notification = { type: 'transaction', hash: result.hash, amount, assetCode: assetCode || 'XLM', timestamp: Date.now() };
-
-    // Notify sender's updated balance + tx notification
-    const senderBalance = await StellarService.getBalance(senderKey, req.correlationId);
-    broadcastToAccount(senderKey, { ...notification, direction: 'sent', balance: senderBalance.balances });
-    dispatchEvent(senderKey, 'payment_sent', { hash: result.hash, amount, assetCode: assetCode || 'XLM', destination });
-
-    // Invalidate cached balances for sender and recipient
-    await invalidateBalance(senderKey);
-    await invalidateBalance(destination);
-
-    // Notify recipient of incoming tx + updated balance
+router.post(
+  '/payment/send',
+  paymentRateLimiter,
+  idempotencyMiddleware,
+  requireKYC,
+  rules.sendPayment,
+  validate,
+  optionalMFA,
+  async (req, res) => {
     try {
-      const recipientBalance = await StellarService.getBalance(destination, req.correlationId);
-      broadcastToAccount(destination, { ...notification, direction: 'received', balance: recipientBalance.balances });
-      dispatchEvent(destination, 'payment_received', { hash: result.hash, amount, assetCode: assetCode || 'XLM', source: senderKey });
-      const pushSub = getSubscriptionByPublicKey(destination);
-      if (pushSub) {
-        sendWebPush(pushSub, { title: 'Payment received', body: `You received ${amount} ${assetCode || 'XLM'}` }).catch(() => {});
-      }
-    } catch (_) {}
+      const { sourceSecret, destination, amount, assetCode, memo, memoType } = req.body;
 
-    res.json(result);
-  } catch (error) {
-    logError(req, error, { destination: req.body.destination, amount: req.body.amount, assetCode: req.body.assetCode });
-    res.status(500).json({ error: 'Failed to send payment' });
+      // Sanctions screening — check sender and recipient before submitting to Stellar
+      const senderKey = StellarSDK.Keypair.fromSecret(sourceSecret).publicKey();
+      const senderKyc = await prisma.kYCRecord.findFirst({
+        where: { user: { publicKey: senderKey } },
+      });
+      const senderName = senderKyc?.fullName ?? senderKey;
+
+      const [senderScreen, recipientScreen] = await Promise.all([
+        sanctionsChecker.check(senderName),
+        sanctionsChecker.check(destination),
+      ]);
+
+      if (senderScreen.hit || recipientScreen.hit) {
+        const reason = senderScreen.hit ? senderScreen.reason : recipientScreen.reason;
+        logger.warn('route.payment.sanctions_hit', { senderKey, destination, reason });
+        return res.status(403).json({ error: 'SANCTIONS_HIT', reason });
+      }
+
+      const result = await StellarService.sendPayment(
+        sourceSecret,
+        destination,
+        amount,
+        assetCode,
+        memo,
+        memoType,
+        req.correlationId
+      );
+
+      // AML monitoring — run asynchronously after payment succeeds
+      const txRecord = await prisma.transaction.findUnique({ where: { hash: result.hash } });
+      if (txRecord) {
+        const history = await prisma.transaction.findMany({
+          where: {
+            senderId: txRecord.senderId,
+            createdAt: { gte: new Date(Date.now() - 24 * 60 * 60 * 1000) },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+        amlMonitor
+          .screenTransaction(txRecord, history)
+          .catch((err) =>
+            logger.error('route.payment.aml_screen_failed', {
+              hash: result.hash,
+              error: err.message,
+            })
+          );
+      }
+
+      const notification = {
+        type: 'transaction',
+        hash: result.hash,
+        amount,
+        assetCode: assetCode || 'XLM',
+        timestamp: Date.now(),
+      };
+
+      // Notify sender's updated balance + tx notification
+      const senderBalance = await StellarService.getBalance(senderKey, req.correlationId);
+      broadcastToAccount(senderKey, {
+        ...notification,
+        direction: 'sent',
+        balance: senderBalance.balances,
+      });
+      dispatchEvent(senderKey, 'payment_sent', {
+        hash: result.hash,
+        amount,
+        assetCode: assetCode || 'XLM',
+        destination,
+      });
+
+      // Invalidate cached balances for sender and recipient
+      await invalidateBalance(senderKey);
+      await invalidateBalance(destination);
+
+      // Notify recipient of incoming tx + updated balance
+      try {
+        const recipientBalance = await StellarService.getBalance(destination, req.correlationId);
+        broadcastToAccount(destination, {
+          ...notification,
+          direction: 'received',
+          balance: recipientBalance.balances,
+        });
+        dispatchEvent(destination, 'payment_received', {
+          hash: result.hash,
+          amount,
+          assetCode: assetCode || 'XLM',
+          source: senderKey,
+        });
+        const pushSub = getSubscriptionByPublicKey(destination);
+        if (pushSub) {
+          const asset = assetCode || 'XLM';
+          const truncatedSender = `${senderKey.slice(0, 4)}…${senderKey.slice(-4)}`;
+          sendWebPush(pushSub, {
+            title: 'Payment received',
+            body: `You received ${amount} ${asset} from ${truncatedSender}`,
+            data: {
+              url: `/app#tx=${result.hash}`,
+              hash: result.hash,
+              amount,
+              assetCode: asset,
+              sender: truncatedSender,
+            },
+          }).catch(() => {});
+        }
+      } catch {
+        /* swallow — recipient balance/push errors must not fail the payment response */
+      }
+
+      res.json(result);
+    } catch (error) {
+      logError(req, error, {
+        destination: req.body.destination,
+        amount: req.body.amount,
+        assetCode: req.body.assetCode,
+      });
+      res.status(500).json({ error: 'Failed to send payment' });
+    }
   }
-});
+);
 
 /**
  * @swagger
@@ -420,7 +493,7 @@ router.get('/account/:publicKey/transactions', rules.publicKeyParam, validate, a
     });
     if (hash) {
       const prefix = hash.toLowerCase();
-      result.records = result.records.filter(tx => tx.hash?.toLowerCase().startsWith(prefix));
+      result.records = result.records.filter((tx) => tx.hash?.toLowerCase().startsWith(prefix));
     }
     res.json(result);
   } catch (error) {
@@ -429,14 +502,18 @@ router.get('/account/:publicKey/transactions', rules.publicKeyParam, validate, a
   }
 });
 
-router.get('/fee-stats', cacheMiddleware(TTL.FEE_STATS, () => cacheKeys.feeStats()), async (req, res) => {
-  try {
-    res.json(await StellarService.getFeeStats());
-  } catch (error) {
-    logError(req, error);
-    res.status(500).json({ error: 'Failed to retrieve fee stats' });
+router.get(
+  '/fee-stats',
+  cacheMiddleware(TTL.FEE_STATS, () => cacheKeys.feeStats()),
+  async (req, res) => {
+    try {
+      res.json(await StellarService.getFeeStats());
+    } catch (error) {
+      logError(req, error);
+      res.status(500).json({ error: 'Failed to retrieve fee stats' });
+    }
   }
-});
+);
 
 /**
  * @swagger
@@ -478,14 +555,21 @@ router.get('/fee-stats', cacheMiddleware(TTL.FEE_STATS, () => cacheKeys.feeStats
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-router.get('/exchange-rate/:from/:to', rules.assetCodeParams, validate,
+router.get(
+  '/exchange-rate/:from/:to',
+  rules.assetCodeParams,
+  validate,
   cacheMiddleware(TTL.RATE, (req) => cacheKeys.rate(req.params.from, req.params.to)),
   async (req, res) => {
     try {
       const { from, to } = req.params;
       const rate = await getRate(from, to);
       if (rate === null) {
-        return res.status(503).json({ error: `Exchange rate unavailable for ${from}/${to}: no liquidity in orderbook` });
+        return res
+          .status(503)
+          .json({
+            error: `Exchange rate unavailable for ${from}/${to}: no liquidity in orderbook`,
+          });
       }
       res.json({ from, to, rate });
     } catch (error) {
@@ -558,7 +642,10 @@ router.post('/amm/swap', (req, res) => {
 });
 
 router.get('/amm/arbitrage/:assetA/:assetB', (req, res) => {
-  const opportunities = AMMService.detectArbitrageOpportunities([req.params.assetA, req.params.assetB]);
+  const opportunities = AMMService.detectArbitrageOpportunities([
+    req.params.assetA,
+    req.params.assetB,
+  ]);
   res.json({ opportunities });
 });
 
@@ -600,7 +687,7 @@ router.get('/amm/optimize', (req, res) => {
 
 // Returns supported assets and their issuers
 router.get('/assets', (req, res) => {
-  const assets = SUPPORTED_ASSETS.map(code => ({
+  const assets = SUPPORTED_ASSETS.map((code) => ({
     code,
     issuer: code === 'XLM' ? null : getIssuer(code),
     native: code === 'XLM',
@@ -627,7 +714,10 @@ router.delete('/trustline', rules.removeTrustline, validate, async (req, res) =>
     const result = await StellarService.removeTrustline(sourceSecret, assetCode);
     res.json(result);
   } catch (error) {
-    if (error.message.startsWith('Cannot remove trustline') || error.message.startsWith('No trustline found')) {
+    if (
+      error.message.startsWith('Cannot remove trustline') ||
+      error.message.startsWith('No trustline found')
+    ) {
       return res.status(400).json({ error: error.message });
     }
     logError(req, error, { assetCode: req.body.assetCode });
@@ -648,8 +738,14 @@ router.get('/account/:publicKey/label', rules.publicKeyParam, validate, async (r
   }
 });
 
-router.put('/account/:publicKey/label', rules.publicKeyParam, validate,
-  body('accountLabel').trim().isLength({ max: 50 }).withMessage('Label must be 50 characters or fewer'),
+router.put(
+  '/account/:publicKey/label',
+  rules.publicKeyParam,
+  validate,
+  body('accountLabel')
+    .trim()
+    .isLength({ max: 50 })
+    .withMessage('Label must be 50 characters or fewer'),
   validate,
   async (req, res) => {
     try {
@@ -693,8 +789,10 @@ router.get('/account/:publicKey/settings', rules.publicKeyParam, validate, async
 });
 
 // PUT /api/stellar/account/:publicKey/settings
-router.put('/account/:publicKey/settings',
-  rules.publicKeyParam, validate,
+router.put(
+  '/account/:publicKey/settings',
+  rules.publicKeyParam,
+  validate,
   body('defaultAsset').optional().isString().trim().isLength({ min: 1, max: 12 }),
   body('notificationsOn').optional().isBoolean(),
   validate,
