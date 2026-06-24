@@ -68,12 +68,13 @@ export function KYCForm() {
     switch (name) {
       case 'fullName':
         return value.trim().length < 2 ? 'Name must be at least 2 characters' : null;
-      case 'dateOfBirth':
+      case 'dateOfBirth': {
         const dob = new Date(value);
         if (isNaN(dob)) return 'Invalid date';
         const age = new Date().getFullYear() - dob.getFullYear();
         if (age < 18) return 'Must be at least 18 years old';
         return null;
+      }
       case 'nationality':
         return value.length < 2 ? 'Please select a valid nationality' : null;
       case 'documentNumber':
@@ -137,8 +138,8 @@ export function KYCForm() {
         setStep('status');
         setSuccess(null);
       }, 2000);
-    } catch (e) {
-      setError(e.response?.data?.error || 'Failed to submit KYC information');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to submit KYC information');
     } finally {
       setLoading(false);
     }

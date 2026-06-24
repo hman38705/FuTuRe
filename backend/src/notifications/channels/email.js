@@ -19,7 +19,7 @@ function getTransport() {
 
   // nodemailer must be installed separately: npm install nodemailer
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    // eslint-disable-next-line no-undef
     const nodemailer = require('nodemailer');
     transport = nodemailer.createTransport({
       host: EMAIL_HOST,

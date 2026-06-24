@@ -37,6 +37,7 @@ export function WebhookManager({ accountId }) {
   useEffect(() => {
     loadWebhooks();
   // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accountId]);
 
   const toggleEvent = (eventName) => {

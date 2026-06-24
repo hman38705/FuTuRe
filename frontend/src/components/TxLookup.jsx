@@ -36,6 +36,7 @@ export function TxLookup({ initialHash = '', accountPublicKey = '', onClose }) {
   // Auto-fetch when opened with a pre-filled hash + known account
   useEffect(() => {
     if (initialHash && accountPublicKey) lookup(initialHash, accountPublicKey);
+    // eslint-disable-next-line react-hooks/exhaustive-deps,jsx-a11y/no-autofocus
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

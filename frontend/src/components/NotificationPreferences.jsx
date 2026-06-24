@@ -66,8 +66,8 @@ export function NotificationPreferences() {
         quietHoursStart: data.preferences.quietHoursStart ?? 22,
         quietHoursEnd: data.preferences.quietHoursEnd ?? 7,
       });
-    } catch (e) {
-      setError(e.response?.data?.error || 'Failed to load preferences');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load preferences');
     } finally {
       setLoading(false);
     }
@@ -102,8 +102,8 @@ export function NotificationPreferences() {
 
       setSuccess('Notification preferences saved successfully!');
       setTimeout(() => setSuccess(null), 3000);
-    } catch (e) {
-      setError(e.response?.data?.error || 'Failed to save preferences');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to save preferences');
     } finally {
       setSaving(false);
     }

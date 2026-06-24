@@ -51,8 +51,8 @@ export function PathPayment({ account }) {
       });
       setPaths(data.paths);
       if (!data.paths.length) setError('No paths found between these assets.');
-    } catch (e) {
-      setError(e?.response?.data?.error ?? e.message);
+    } catch (err) {
+      setError(err?.response?.data?.error ?? err.message);
     } finally {
       setFinding(false);
     }
@@ -75,8 +75,8 @@ export function PathPayment({ account }) {
       setSuccess(`Sent! Hash: ${data.hash.slice(0, 8)}…`);
       setForm(DEFAULT_FORM);
       setPaths(null);
-    } catch (e) {
-      setError(e?.response?.data?.error ?? e.message);
+    } catch (err) {
+      setError(err?.response?.data?.error ?? err.message);
     } finally {
       setSending(false);
     }

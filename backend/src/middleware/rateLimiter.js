@@ -32,7 +32,7 @@ function createRateLimiter(options = {}) {
     legacyHeaders,
     skip,
     keyGenerator: (req) => getClientIP(req),
-    handler: (req, res, next, options) => {
+    handler: (req, res, _next, opts) => {
       const clientIP = getClientIP(req);
       const username = req.body?.username || 'unknown';
 
@@ -49,7 +49,7 @@ function createRateLimiter(options = {}) {
       res.set('Retry-After', retryAfter.toString());
       
       res.status(429).json({
-        error: options.message.error || message,
+        error: opts.message.error || message,
         statusCode: 429,
         retryAfter,
       });

@@ -35,6 +35,8 @@ import recoveryRoutes from './routes/recovery.js';
 import { eventMonitor } from './eventSourcing/index.js';
 import streamingRoutes from './routes/streaming.js';
 import retryRoutes from './routes/retry.js';
+import { processActiveStreams } from './services/streaming.js';
+import { expireStaleTransactions } from './services/multiSig.js';
 import accountsRoutes from './routes/accounts.js';
 import clinicsRoutes from './routes/clinics.js';
 import { auditLogger } from './security/index.js';

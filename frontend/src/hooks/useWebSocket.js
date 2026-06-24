@@ -30,7 +30,7 @@ export function useWebSocket(publicKey, onMessage) {
         const parsed = JSON.parse(e.data);
         // Broadcast messages are wrapped in { data, sig }; direct messages are not
         onMessageRef.current?.(parsed.data ?? parsed);
-      } catch (_) {}
+      } catch (_) { /* ignore connection errors handled by onclose */ }
     };
 
     socket.onclose = () => {

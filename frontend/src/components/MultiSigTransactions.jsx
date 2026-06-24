@@ -48,8 +48,8 @@ export function MultiSigTransactions({ publicKey }) {
     try {
       const { data } = await apiClient.get(`/api/multisig/account/${publicKey}`);
       setSigners(data.signers || []);
-    } catch (e) {
-      setError(e.response?.data?.error || 'Failed to load config');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load config');
     }
   }, [publicKey]);
 
@@ -59,8 +59,8 @@ export function MultiSigTransactions({ publicKey }) {
     try {
       const { data } = await apiClient.get(`/api/multisig/transaction/pending/${publicKey}`);
       setPendingTxs(data.transactions || []);
-    } catch (e) {
-      setError(e.response?.data?.error || 'Failed to load pending transactions');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to load pending transactions');
     } finally {
       setPendingLoading(false);
     }
@@ -102,8 +102,8 @@ export function MultiSigTransactions({ publicKey }) {
       setSetupForm({ sourceSecret: '', signerPublicKey: '', signerWeight: '1', lowThreshold: '1', medThreshold: '1', highThreshold: '1', masterWeight: '1' });
       setTimeout(() => setSuccess(null), 4000);
       fetchCurrentConfig();
-    } catch (e) {
-      setError(e.response?.data?.error || 'Failed to create multi-sig account');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to create multi-sig account');
     } finally {
       setLoading(false);
     }
@@ -124,8 +124,8 @@ export function MultiSigTransactions({ publicKey }) {
       setBuiltTx(data);
       setSuccess('Transaction built! Share the txId with co-signers.');
       setTimeout(() => setSuccess(null), 4000);
-    } catch (e) {
-      setError(e.response?.data?.error || 'Failed to build transaction');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to build transaction');
     } finally {
       setLoading(false);
     }
@@ -145,8 +145,8 @@ export function MultiSigTransactions({ publicKey }) {
       setSignForm({ txId: '', signerSecret: '' });
       setTimeout(() => setSuccess(null), 4000);
       fetchPendingTxs();
-    } catch (e) {
-      setError(e.response?.data?.error || 'Failed to sign transaction');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to sign transaction');
     } finally {
       setSignLoading(false);
     }
@@ -160,8 +160,8 @@ export function MultiSigTransactions({ publicKey }) {
       setSuccess(`Transaction submitted! Hash: ${data.hash}`);
       setTimeout(() => setSuccess(null), 4000);
       fetchPendingTxs();
-    } catch (e) {
-      setError(e.response?.data?.error || 'Failed to submit transaction');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Failed to submit transaction');
     } finally {
       setLoading(false);
     }

@@ -276,6 +276,7 @@ router.post(
             })
           );
       }
+    } catch (_) { /* non-critical: recipient notification failure doesn't fail the payment */ }
 
       const notification = {
         type: 'transaction',

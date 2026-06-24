@@ -51,8 +51,8 @@ router.post('/scenarios/create', async (req, res) => {
     const { name, description, requests, duration, rampUp, concurrency } = req.body;
     const scenario = new LoadTestScenario(name, description);
     
-    for (const req of requests) {
-      scenario.addRequest(req.method, req.path, req.body, req.weight);
+    for (const reqItem of requests) {
+      scenario.addRequest(reqItem.method, reqItem.path, reqItem.body, reqItem.weight);
     }
     
     scenario.setDuration(duration).setRampUp(rampUp).setConcurrency(concurrency);

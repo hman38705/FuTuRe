@@ -202,11 +202,11 @@ router.post('/login', loginRateLimiter, userRules, validateBody, async (req, res
     if (valid) {
       updateUserPassword(user.id, recovered.passwordHash);
       await clearFailedAttempts(username);
-      const payload = { sub: user.id, username: user.username };
-      const refreshToken = signRefreshToken(payload);
-      setRefreshTokenCookie(res, refreshToken);
+      const recoveredPayload = { sub: user.id, username: user.username };
+      const recoveredRefreshToken = signRefreshToken(recoveredPayload);
+      setRefreshTokenCookie(res, recoveredRefreshToken);
       return res.json({
-        accessToken: signAccessToken(payload),
+        accessToken: signAccessToken(recoveredPayload),
         recovered: true,
       });
     }

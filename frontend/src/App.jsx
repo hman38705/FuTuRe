@@ -52,6 +52,7 @@ import { InstallBanner } from './components/InstallBanner';
 import { useTheme } from './contexts/ThemeContext';
 import { useAppState, useAppDispatch, A } from './store/index.js';
 import { useExchangeRate } from './hooks/useExchangeRate';
+import { useBalance, useSendPayment, useCreateAccount, useImportAccount, useKycStatus, useSaveAccountLabel, useNetworkStatusQuery } from './hooks/useQueryHooks';
 import {
   useBalance,
   useSendPayment,
@@ -157,7 +158,7 @@ function App() {
   );
 
   const wsStatus = useWebSocket(account?.publicKey ?? null, handleWsMessage);
-  const { status: networkStatus } = useNetworkStatus();
+  const { status: networkStatus } = useNetworkStatusQuery();
   const { rate: xlmUsdRate, loading: rateLoading } = useExchangeRate(lastWsMessage);
 
   useEffect(() => {
@@ -261,6 +262,12 @@ function App() {
     }
   };
 
+  const loadLabel = useCallback(async (publicKey) => {
+    try {
+      const fetchedLabel = await getAccountLabel(publicKey);
+      dispatch({ type: A.SET_LABEL, payload: fetchedLabel });
+    } catch { /* non-critical */ }
+  }, [dispatch]);
   const loadLabel = useCallback(
     async (publicKey) => {
       try {
@@ -332,6 +339,9 @@ function App() {
     } catch (error) {
       logError(error, { context: 'createAccount' });
       msg.error(getFriendlyError(error), { retry: createAccount });
+    } finally { dispatch({ type: A.SET_LOADING, payload: '' }); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  // eslint-disable-next-line react-hooks/exhaustive-deps
     } finally {
       dispatch({ type: A.SET_LOADING, payload: '' });
     }
@@ -363,6 +373,9 @@ function App() {
     } catch (error) {
       logError(error, { context: 'checkBalance' });
       msg.error(getFriendlyError(error), { retry: checkBalance });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    } finally { dispatch({ type: A.SET_LOADING, payload: '' }); }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
     } finally {
       dispatch({ type: A.SET_LOADING, payload: '' });
     }
@@ -427,8 +440,6 @@ function App() {
       resetForm();
       checkBalance();
       setShowPaymentConfirmation(false);
-      setAmount('');
-      setRecipient('');
     } catch (error) {
       dispatch({ type: A.REVERT_BALANCE });
       if (error?.response?.data?.error === 'KYC_REQUIRED') {
@@ -1668,6 +1679,15 @@ function App() {
               />
             )}
 
+        {showBackupSettings && (
+          <Suspense fallback={<Spinner />}>
+            <BackupSettings onClose={() => setShowBackupSettings(false)} />
+          </Suspense>
+        )}
+      </AnimatePresence>
+    </motion.div>
+    </div>
+  </>
             {showComplianceDashboard && (
               <ErrorBoundary context="Compliance Dashboard">
                 <Suspense fallback={<Spinner />}>

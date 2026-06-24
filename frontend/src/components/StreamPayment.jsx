@@ -33,8 +33,8 @@ export function StreamPayment({ publicKey }) {
     try {
       const { data } = await apiClient.get('/api/streaming', { params: { senderPublicKey: publicKey } });
       setStreams(data);
-    } catch (e) {
-      setError(e?.response?.data?.error ?? e.message);
+    } catch (err) {
+      setError(err?.response?.data?.error ?? err.message);
     } finally {
       setLoadingStreams(false);
     }
@@ -62,8 +62,8 @@ export function StreamPayment({ publicKey }) {
       setForm({ recipientPublicKey: '', rateAmount: '', intervalSeconds: '60', endTime: '' });
       setShowForm(false);
       fetchStreams();
-    } catch (e) {
-      setFormError(e?.response?.data?.error ?? e?.response?.data?.errors?.[0]?.msg ?? e.message);
+    } catch (err) {
+      setFormError(e?.response?.data?.error ?? e?.response?.data?.errors?.[0]?.msg ?? err.message);
     } finally {
       setCreating(false);
     }
@@ -74,8 +74,8 @@ export function StreamPayment({ publicKey }) {
     try {
       await apiClient.post(`/api/streaming/${id}/${action}`);
       fetchStreams();
-    } catch (e) {
-      setError(e?.response?.data?.error ?? e.message);
+    } catch (err) {
+      setError(err?.response?.data?.error ?? err.message);
     } finally {
       setActionLoading('');
     }

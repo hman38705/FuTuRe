@@ -67,7 +67,7 @@ const ENV_SCHEMA = {
 function validateEnv(strict = false) {
   const errors = [];
   const warnings = [];
-  const env = {};
+  const validated = {};
 
   for (const [key, schema] of Object.entries(ENV_SCHEMA)) {
     const value = import.meta.env[key];
@@ -83,7 +83,7 @@ function validateEnv(strict = false) {
         }
       }
       // Store undefined for missing optional vars so callers can use ?? defaults
-      env[key] = undefined;
+      validated[key] = undefined;
       continue;
     }
 
@@ -100,7 +100,7 @@ function validateEnv(strict = false) {
       }
     }
 
-    env[key] = value;
+    validated[key] = value;
   }
 
   if (warnings.length > 0) {
@@ -118,7 +118,7 @@ function validateEnv(strict = false) {
     );
   }
 
-  return env;
+  return validated;
 }
 
 // Run validation immediately when this module is imported.

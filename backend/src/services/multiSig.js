@@ -25,6 +25,10 @@ function getNetworkPassphrase() {
 export async function createMultiSigAccount(sourceSecret, signers, thresholds, masterWeight = 1) {
   const sourceKeypair = StellarSDK.Keypair.fromSecret(sourceSecret);
   const sourceAccount = await getHorizonServer().loadAccount(sourceKeypair.publicKey());
+  const txBuilder = new StellarSDK.TransactionBuilder(sourceAccount, {
+    fee: StellarSDK.BASE_FEE,
+    networkPassphrase: getNetworkPassphrase(),
+  });
   txBuilder.addOperation(
     StellarSDK.Operation.setOptions({
       masterWeight,
@@ -294,7 +298,7 @@ export async function updateMultiSigConfig(sourceSecret, updates) {
 
   const txBuilder = new StellarSDK.TransactionBuilder(sourceAccount, {
     fee: StellarSDK.BASE_FEE,
-    getNetworkPassphrase(),
+    networkPassphrase: getNetworkPassphrase(),
   });
 
   if (updates.thresholds || updates.masterWeight !== undefined) {

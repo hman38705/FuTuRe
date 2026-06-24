@@ -138,8 +138,8 @@ export async function sendPathPayment({
   }
 
   // Determine min destination amount with slippage
-  const paths = await findPaths({ sourceAsset: sendAsset, sourceAmount: sendAmount, destinationAsset: destAsset });
-  const bestDestAmount = paths[0]?.destinationAmount || sendAmount;
+  const bestPaths = await findPaths({ sourceAsset: sendAsset, sourceAmount: sendAmount, destinationAsset: destAsset });
+  const bestDestAmount = bestPaths[0]?.destinationAmount || sendAmount;
   const destMin = applySlippage(bestDestAmount, slippageBps);
 
   const account = await getServer().loadAccount(sourcePublicKey);
@@ -178,12 +178,12 @@ export async function sendPathPayment({
   });
 
   // Persist
-  await prisma.$transaction(async (tx) => {
+  await prisma.$transaction(async (prismaTx) => {
     const [sender, recipient] = await Promise.all([
-      tx.user.upsert({ where: { publicKey: sourcePublicKey }, update: {}, create: { publicKey: sourcePublicKey } }),
-      tx.user.upsert({ where: { publicKey: destination }, update: {}, create: { publicKey: destination } }),
+      prismaTx.user.upsert({ where: { publicKey: sourcePublicKey }, update: {}, create: { publicKey: sourcePublicKey } }),
+      prismaTx.user.upsert({ where: { publicKey: destination }, update: {}, create: { publicKey: destination } }),
     ]);
-    await tx.transaction.create({
+    await prismaTx.transaction.create({
       data: {
         hash: result.hash,
         assetCode: destAsset.code,

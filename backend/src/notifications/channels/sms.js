@@ -15,7 +15,7 @@ function getTwilioClient() {
 
   // twilio must be installed separately: npm install twilio
   try {
-    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    // eslint-disable-next-line no-undef
     const twilio = require('twilio');
     twilioClient = twilio(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN);
     return twilioClient;

@@ -19,7 +19,7 @@ export const idempotencyMiddleware = async (req, res, next) => {
   }
 
   // Validate key format (UUID or similar)
-  if (!/^[a-zA-Z0-9\-]{1,255}$/.test(idempotencyKey)) {
+  if (!/^[a-zA-Z0-9-]{1,255}$/.test(idempotencyKey)) {
     return res.status(400).json({ error: 'Invalid Idempotency-Key format' });
   }
 

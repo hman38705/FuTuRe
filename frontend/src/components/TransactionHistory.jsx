@@ -1,3 +1,4 @@
+import axios from 'axios';
 import { useState, useCallback, useRef, useEffect } from 'react';
 import apiClient from '../api/client.js';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
@@ -172,6 +173,7 @@ export function TransactionHistory({ publicKey }) {
   const [error, setError] = useState(null);
   const [retrying, setRetrying] = useState({}); // { [txId]: 'pending' | 'success' | 'error' }
   const [exporting, setExporting] = useState(false);
+  const [nextCursor, setNextCursor] = useState(null); // eslint-disable-line no-unused-vars
   const prefersReduced = useReducedMotion();
   const tap = tapScale(prefersReduced);
 
