@@ -1463,6 +1463,85 @@ function App() {
                       <PathPayment account={account} />
                     </ErrorBoundary>
                   </motion.div>
+                {/* Account Recovery */}
+                <motion.div variants={v.fadeSlide}>
+                  <Suspense fallback={<Spinner />}>
+                    <AccountRecovery />
+                  </Suspense>
+                </motion.div>
+                {/* Settings Sections Tabs */}
+                <motion.section className="section" variants={v.fadeSlide}>
+                  <h2 style={{ marginBottom: 16 }}>Advanced Features</h2>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 16 }}>
+                    {[
+                      { id: 'multisig', label: '🔐 Multi-Sig', ariaLabel: 'Toggle multi-signature transactions panel' },
+                      { id: 'kyc', label: '📋 KYC', ariaLabel: 'Toggle KYC identity verification panel' },
+                      { id: 'notifications', label: '🔔 Notifications', ariaLabel: 'Toggle notification preferences panel' },
+                      { id: 'backup', label: '💾 Backup', ariaLabel: 'Open backup settings', action: () => setShowBackupSettings(true) },
+                      ...(userRole === 'admin' ? [{ id: 'compliance', label: '🛡️ Compliance', ariaLabel: 'Open compliance dashboard', action: () => setShowComplianceDashboard(true) }] : []),
+                    ].map((section) => (
+                      <button
+                        key={section.id}
+                        type="button"
+                        aria-label={section.ariaLabel}
+                        aria-expanded={!section.action ? activeSettingsSection === section.id : undefined}
+                        aria-controls={!section.action ? `advanced-section-${section.id}` : undefined}
+                        onClick={() => {
+                          if (section.action) {
+                            section.action();
+                          } else {
+                            setActiveSettingsSection(activeSettingsSection === section.id ? null : section.id);
+                          }
+                        }}
+                        style={{
+                          padding: '10px 16px',
+                          background: activeSettingsSection === section.id ? '#2563eb' : '#f3f4f6',
+                          color: activeSettingsSection === section.id ? '#fff' : '#333',
+                          border: 'none',
+                          borderRadius: 4,
+                          cursor: 'pointer',
+                          fontWeight: 500,
+                          transition: 'all 0.2s',
+                        }}
+                      >
+                        {section.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <AnimatePresence mode="wait">
+                    {activeSettingsSection === 'multisig' && (
+                      <motion.div id="advanced-section-multisig" key="multisig" variants={v.fadeSlide} initial="hidden" animate="visible" exit="exit">
+                        <Suspense fallback={<Spinner />}>
+                          <MultiSigTransactions publicKey={account.publicKey} />
+                        </Suspense>
+                        <ErrorBoundary context="Multi-Sig Transactions">
+                          <MultiSigTransactions publicKey={account.publicKey} />
+                        </ErrorBoundary>
+                      </motion.div>
+                    )}
+                    {activeSettingsSection === 'kyc' && (
+                      <motion.div id="advanced-section-kyc" key="kyc" variants={v.fadeSlide} initial="hidden" animate="visible" exit="exit">
+                        <Suspense fallback={<Spinner />}>
+                          <KYCForm />
+                        </Suspense>
+                        <ErrorBoundary context="KYC Form">
+                          <KYCForm />
+                        </ErrorBoundary>
+                      </motion.div>
+                    )}
+                    {activeSettingsSection === 'notifications' && (
+                      <motion.div id="advanced-section-notifications" key="notifications" variants={v.fadeSlide} initial="hidden" animate="visible" exit="exit">
+                        <NotificationPreferences />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.section>
+                {/* Path Payment */}
+                <motion.div variants={v.fadeSlide}>
+                  <ErrorBoundary context="Path Payment">
+                    <PathPayment account={account} />
+                  </ErrorBoundary>
                 </motion.div>
               )}
             </AnimatePresence>
