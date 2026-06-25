@@ -438,4 +438,87 @@ router.delete('/:accountId/monitor', rules.accountIdParam, validate, async (req,
   }
 });
 
+/**
+ * @swagger
+ * /api/transactions/{accountId}/export:
+ *   get:
+ *     summary: Export transaction history as CSV
+ *     description: Export transactions to CSV format with optional date range filtering
+ *     tags: [Transactions]
+ *     parameters:
+ *       - in: path
+ *         name: accountId
+ *         required: true
+ *         schema:
+ *           type: string
+ *         example: GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGZWM9CQJHD9QDNHXHXN
+ *       - in: query
+ *         name: format
+ *         schema:
+ *           type: string
+ *           enum: [csv]
+ *           default: csv
+ *         description: Export format
+ *       - in: query
+ *         name: startTime
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Start date for filtering (ISO 8601)
+ *       - in: query
+ *         name: endTime
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: End date for filtering (ISO 8601)
+ *     responses:
+ *       200:
+ *         description: CSV export data
+ *         headers:
+ *           Content-Disposition:
+ *             schema:
+ *               type: string
+ *               example: attachment; filename="transactions.csv"
+ *         content:
+ *           text/csv:
+ *             schema:
+ *               type: string
+ *       400:
+ *         $ref: '#/components/responses/BadRequest'
+ *       401:
+ *         $ref: '#/components/responses/Unauthorized'
+ *       429:
+ *         $ref: '#/components/responses/TooManyRequests'
+ *       500:
+ *         $ref: '#/components/responses/InternalServerError'
+ */
+router.get('/:accountId/export', rules.accountIdParam, validate, async (req, res) => {
+  try {
+    const { accountId } = req.params;
+    const { format = 'csv', startTime, endTime } = req.query;
+
+    if (format !== 'csv') {
+      return res.status(400).json({ error: 'Only CSV format is supported' });
+    }
+
+    const options = {
+      limit: 1000,
+      includeFailed: true,
+      startTime,
+      endTime
+    };
+
+    const transactions = await transactionService.getTransactions(accountId, options);
+    const csv = transactionService.transactionsToCSV(transactions);
+
+    const filename = `transactions-${accountId.slice(0, 8)}-${new Date().toISOString().slice(0, 10)}.csv`;
+    res.setHeader('Content-Type', 'text/csv;charset=utf-8;');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(csv);
+  } catch (error) {
+    logError(req, error, { accountId: req.params.accountId });
+    res.status(500).json({ error: 'Failed to export transactions' });
+  }
+});
+
 export default router;
