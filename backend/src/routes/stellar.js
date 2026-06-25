@@ -19,6 +19,7 @@ import { optionalMFA } from '../middleware/mfa.js';
 import { requireKYC } from '../middleware/kyc.js';
 import sanctionsChecker from '../compliance/sanctionsChecker.js';
 import amlMonitor from '../compliance/amlMonitor.js';
+import { AppError, ErrorCodes } from '../middleware/errorHandler.js';
 
 const router = express.Router();
 
@@ -244,7 +245,7 @@ router.post(
       if (senderScreen.hit || recipientScreen.hit) {
         const reason = senderScreen.hit ? senderScreen.reason : recipientScreen.reason;
         logger.warn('route.payment.sanctions_hit', { senderKey, destination, reason });
-        return res.status(403).json({ error: 'SANCTIONS_HIT', reason });
+        return res.status(403).json({ error: { code: 'SANCTIONS_MATCH', message: 'Sanctions screening failed', reason } });
       }
 
       const result = await StellarService.sendPayment(

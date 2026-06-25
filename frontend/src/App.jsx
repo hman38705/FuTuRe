@@ -442,7 +442,7 @@ function App() {
       setShowPaymentConfirmation(false);
     } catch (error) {
       dispatch({ type: A.REVERT_BALANCE });
-      if (error?.response?.data?.error === 'KYC_REQUIRED') {
+      if (error?.response?.data?.error?.code === 'KYC_REQUIRED' || error?.response?.data?.error === 'KYC_REQUIRED') {
         msg.error(
           `Large transactions above ${KYC_LARGE_TRANSACTION_LIMIT} XLM require approved KYC.`
         );

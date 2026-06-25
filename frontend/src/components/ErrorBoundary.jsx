@@ -2,6 +2,29 @@ import { Component } from 'react';
 import * as Sentry from '@sentry/react';
 import { logError } from '../utils/errorLogger';
 
+const SENSITIVE_RE = /S[0-9A-Z]{54}|(?:secret|privateKey|password|token)(?=\s*[:=])/gi;
+function scrub(text) {
+  return text ? text.replace(SENSITIVE_RE, '[REDACTED]') : text;
+}
+
+async function reportToBackend(error, errorInfo, context) {
+  try {
+    await fetch('/api/analytics/client-errors', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message: scrub(error?.message),
+        stack: scrub(error?.stack),
+        componentStack: scrub(errorInfo?.componentStack),
+        context: context ?? 'unknown',
+        url: window.location.href,
+      }),
+    });
+  } catch {
+    // silently ignore reporting failures
+  }
+}
+
 export class ErrorBoundary extends Component {
   constructor(props) {
     super(props);
@@ -19,6 +42,9 @@ export class ErrorBoundary extends Component {
       componentStack: errorInfo?.componentStack,
       context: this.props.context ?? 'unknown',
     });
+
+    // Report to backend telemetry
+    reportToBackend(error, errorInfo, this.props.context);
 
     // Report to Sentry with React context
     if (Sentry.captureException) {

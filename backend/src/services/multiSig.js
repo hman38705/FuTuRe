@@ -367,14 +367,56 @@ export async function getPendingTransaction(txId) {
 }
 
 /**
- * Mark all pending multi-sig transactions that have passed their expiry as 'expired'.
+ * Mark all pending multi-sig transactions that have passed their expiry as 'expired',
+ * and notify all signers via WebSocket broadcast.
  * Intended to be called by a scheduled cleanup job.
  * @returns {Promise<number>} The count of records updated
  */
 export async function expireStaleTransactions() {
-  const { count } = await prisma.pendingMultiSigTx.updateMany({
+  // Fetch records before updating so we can notify signers
+  const stale = await prisma.pendingMultiSigTx.findMany({
     where: { status: 'pending', expiresAt: { lte: new Date() } },
+  });
+
+  if (stale.length === 0) return 0;
+
+  const txIds = stale.map((tx) => tx.txId);
+  const { count } = await prisma.pendingMultiSigTx.updateMany({
+    where: { txId: { in: txIds } },
     data: { status: 'expired' },
   });
+
+  // Notify the source account for each expired transaction
+  const { broadcastToAccount } = await import('./websocket.js');
+  for (const tx of stale) {
+    broadcastToAccount(tx.sourcePublicKey, {
+      type: 'multisig_tx_expired',
+      txId: tx.txId,
+      destination: tx.destination,
+      amount: tx.amount,
+      assetCode: tx.assetCode,
+    });
+
+    await eventMonitor.publishEvent(tx.sourcePublicKey, {
+      type: 'MultiSigTransactionExpired',
+      data: { txId: tx.txId, signers: tx.signatures },
+      version: 1,
+    });
+  }
+
   return count;
+}
+
+/**
+ * List all expired multi-sig transactions, optionally filtered by source account.
+ * @param {string} [sourcePublicKey] - Optional filter by source account
+ * @returns {Promise<Array>}
+ */
+export async function getExpiredTransactions(sourcePublicKey) {
+  const where = { status: 'expired' };
+  if (sourcePublicKey) where.sourcePublicKey = sourcePublicKey;
+  const rows = await prisma.pendingMultiSigTx.findMany({ where });
+  return rows.map(({ txId, destination, amount, assetCode, signatures, expiresAt, createdAt }) => ({
+    txId, destination, amount, assetCode, signatures, expiresAt, createdAt,
+  }));
 }

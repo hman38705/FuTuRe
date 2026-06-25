@@ -225,3 +225,19 @@ model AuditLog {
   @@index([actionType])
   @@index([severity])
 }
+
+model ClientError {
+  id             String   @id @default(uuid())
+  message        String
+  stack          String?
+  componentStack String?
+  context        String?
+  url            String?
+  userAgent      String?
+  userId         String?
+  createdAt      DateTime @default(now())
+  expiresAt      DateTime
+
+  @@index([createdAt])
+  @@index([context])
+}

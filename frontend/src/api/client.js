@@ -45,8 +45,10 @@ async function refreshAccessToken() {
 }
 
 function normalizeAxiosError(error) {
+  const responseError = error.response?.data?.error;
   const normalized = {
-    message: error.response?.data?.error || error.message || 'Request failed',
+    message: (typeof responseError === 'object' ? responseError?.message : responseError) || error.message || 'Request failed',
+    code: typeof responseError === 'object' ? responseError?.code : null,
     status: error.response?.status,
     data: error.response?.data,
   };

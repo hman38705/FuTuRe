@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/auth.js';
 import { aggregator, userBehavior, fraudDetector, patternAnalyzer, dataExporter } from '../analytics/index.js';
+import prisma from '../db/client.js';
 
 // In-memory store for web vitals (replace with DB/time-series in production)
 const webVitalsStore = [];
@@ -336,6 +337,86 @@ router.get('/web-vitals/dashboard', requireAuth, (req, res) => {
     TTFB: p75('TTFB'),
     sampleCount: filtered.length,
   });
+});
+
+// ── Client Error Telemetry (Issue #553) ──────────────────────────────────────
+
+const SENSITIVE_PATTERN = /S[0-9A-Z]{54}|(?:secret|privateKey|password|token)(?=\s*[:=])/gi;
+
+function scrub(text) {
+  if (!text) return text;
+  return text.replace(SENSITIVE_PATTERN, '[REDACTED]');
+}
+
+/**
+ * @swagger
+ * /api/analytics/client-errors:
+ *   post:
+ *     summary: Report a client-side error from ErrorBoundary
+ *     tags: [Analytics]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [message]
+ *             properties:
+ *               message:     { type: string }
+ *               stack:       { type: string }
+ *               componentStack: { type: string }
+ *               context:     { type: string }
+ *               url:         { type: string }
+ *               userId:      { type: string }
+ *     responses:
+ *       204: { description: Accepted }
+ *       400: { description: Invalid payload }
+ */
+router.post('/client-errors', async (req, res) => {
+  const { message, stack, componentStack, context, url, userId } = req.body;
+  if (!message) return res.status(400).json({ error: { code: 'VALIDATION_ERROR', message: 'message is required' } });
+
+  const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 days
+  await prisma.clientError.create({
+    data: {
+      message: scrub(String(message).slice(0, 1000)),
+      stack: scrub(stack?.slice(0, 5000)),
+      componentStack: scrub(componentStack?.slice(0, 5000)),
+      context: context ? String(context).slice(0, 100) : null,
+      url: url ? String(url).slice(0, 500) : null,
+      userAgent: req.headers['user-agent']?.slice(0, 300) ?? null,
+      userId: userId ? String(userId).slice(0, 36) : null,
+      expiresAt,
+    },
+  });
+  res.status(204).end();
+});
+
+/**
+ * @swagger
+ * /api/analytics/client-errors/dashboard:
+ *   get:
+ *     summary: Admin view — client error frequency by context (last 30 days)
+ *     tags: [Analytics]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Error frequency grouped by context }
+ *       401: { description: Unauthorized }
+ */
+router.get('/client-errors/dashboard', requireAuth, async (req, res) => {
+  try {
+    const since = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    const rows = await prisma.clientError.groupBy({
+      by: ['context'],
+      where: { createdAt: { gte: since } },
+      _count: { id: true },
+      orderBy: { _count: { id: 'desc' } },
+    });
+    res.json({ buckets: rows.map((r) => ({ context: r.context, count: r._count.id })) });
+  } catch (err) {
+    res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: err.message } });
+  }
 });
 
 export default router;

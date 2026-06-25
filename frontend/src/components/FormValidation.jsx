@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useRef } from 'react';
 
 /**
  * Validation status icons
@@ -221,13 +221,15 @@ export function FormProgress({
 }
 
 /**
- * ValidationSummary — form-level validation summary
+ * ValidationSummary — form-level validation summary with aria-live announcement for screen readers.
+ * Pass `summaryRef` to get a ref for programmatic focus on failed submission.
  */
 export function ValidationSummary({ 
   errors, 
   warnings = [],
   title = 'Please fix the following errors:',
-  showWarnings = true
+  showWarnings = true,
+  summaryRef,
 }) {
   if (errors.length === 0 && (!showWarnings || warnings.length === 0)) {
     return null;
@@ -235,7 +237,12 @@ export function ValidationSummary({
 
   return (
     <motion.div
+      ref={summaryRef}
       className="validation-summary"
+      role="alert"
+      aria-live="assertive"
+      aria-atomic="true"
+      tabIndex={-1}
       initial={{ opacity: 0, y: -10 }}
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }}
@@ -244,7 +251,8 @@ export function ValidationSummary({
         border: `1px solid ${errors.length > 0 ? '#fecaca' : '#fde68a'}`,
         borderRadius: 8,
         padding: 12,
-        marginBottom: 16
+        marginBottom: 16,
+        outline: 'none',
       }}
     >
       {errors.length > 0 && (
@@ -319,6 +327,7 @@ export function useFormValidation(initialState = {}) {
   const [errors, setErrors] = useState({});
   const [warnings, setWarnings] = useState({});
   const [touched, setTouched] = useState({});
+  const summaryRef = useRef(null);
 
   const setValue = useCallback((field, value) => {
     setValues(prev => ({ ...prev, [field]: value }));
@@ -407,6 +416,9 @@ export function useFormValidation(initialState = {}) {
     isValid,
     completedFields,
     totalFields,
+    summaryRef,
+    /** Call after a failed submit to move focus to the error summary for screen readers. */
+    focusSummary: useCallback(() => { summaryRef.current?.focus(); }, []),
   };
 }
 

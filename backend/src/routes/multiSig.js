@@ -2,6 +2,7 @@ import express from 'express';
 import { validate, rules } from '../middleware/validate.js';
 import * as MultiSigService from '../services/multiSig.js';
 import { broadcastToAccount } from '../services/websocket.js';
+import { AppError, ErrorCodes } from '../middleware/errorHandler.js';
 import logger from '../config/logger.js';
 
 const router = express.Router();
@@ -219,17 +220,25 @@ router.post('/transaction/build', rules.buildMultiSigTx, validate, async (req, r
  *     responses:
  *       200:
  *         description: Signature added
+ *       410:
+ *         description: Transaction expired
  *       500:
  *         description: Server error
  */
-router.post('/transaction/sign', rules.signMultiSigTx, validate, async (req, res) => {
+router.post('/transaction/sign', rules.signMultiSigTx, validate, async (req, res, next) => {
   try {
     const { txId, signerSecret } = req.body;
     const result = await MultiSigService.addSignature(txId, signerSecret);
     res.json(result);
   } catch (error) {
+    if (error.message?.includes('expired')) {
+      return next(new AppError(error.message, 410, ErrorCodes.CONFLICT));
+    }
+    if (error.message?.includes('not found')) {
+      return next(new AppError(error.message, 404, ErrorCodes.NOT_FOUND));
+    }
     logError(req, error, { txId: req.body.txId });
-    res.status(500).json({ error: 'Failed to add signature' });
+    next(error);
   }
 });
 
@@ -360,6 +369,34 @@ router.get('/transaction/:txId', async (req, res) => {
   } catch (error) {
     logError(req, error, { txId: req.params.txId });
     res.status(500).json({ error: 'Failed to retrieve transaction' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/multisig/expired:
+ *   get:
+ *     summary: List all expired multi-sig transactions
+ *     tags: [MultiSig]
+ *     parameters:
+ *       - in: query
+ *         name: sourcePublicKey
+ *         schema:
+ *           type: string
+ *         description: Optional filter by source account
+ *     responses:
+ *       200:
+ *         description: List of expired transactions
+ *       500:
+ *         description: Server error
+ */
+router.get('/expired', async (req, res, next) => {
+  try {
+    const transactions = await MultiSigService.getExpiredTransactions(req.query.sourcePublicKey);
+    res.json({ transactions });
+  } catch (error) {
+    logError(req, error);
+    next(error);
   }
 });
 
