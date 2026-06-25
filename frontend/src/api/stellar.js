@@ -230,3 +230,8 @@ export async function createTrustline(sourceSecret, assetCode, options = {}) {
   const response = await apiClient.post('/api/stellar/trustline/create', { sourceSecret, assetCode }, options);
   return response.data;
 }
+
+export async function batchPayment(payload, options = {}) {
+  const response = await apiClient.post('/api/stellar/batch-payment', payload, options);
+  return response.data;
+}

@@ -21,6 +21,14 @@ import sanctionsChecker from '../compliance/sanctionsChecker.js';
 import amlMonitor from '../compliance/amlMonitor.js';
 import { AppError, ErrorCodes } from '../middleware/errorHandler.js';
 
+const isValidStellarAddress = (address) => {
+  try {
+    return StellarSDK.StrKey.isValidEd25519PublicKey(address);
+  } catch {
+    return false;
+  }
+};
+
 const router = express.Router();
 
 function logError(req, error, context = {}) {
@@ -895,5 +903,125 @@ router.get('/account/:publicKey/balances', cacheMiddleware(cacheKeys.balance, TT
     res.status(500).json({ error: error.message });
   }
 });
+
+// POST /api/stellar/batch-payment - Send payment to multiple recipients
+router.post(
+  '/batch-payment',
+  paymentRateLimiter,
+  idempotencyMiddleware,
+  requireKYC,
+  [
+    body('sourceSecret').notEmpty(),
+    body('payments').isArray({ min: 1, max: 10 }),
+    body('payments.*.destination').notEmpty().isString(),
+    body('payments.*.amount').notEmpty().isString(),
+    body('payments.*.assetCode').optional().isString().isLength({ min: 1, max: 12 }),
+    body('memo').optional().isString().isLength({ max: 28 }),
+    body('memoType').optional().isIn(['text', 'id', 'hash', 'return']),
+  ],
+  validate,
+  optionalMFA,
+  async (req, res) => {
+    try {
+      const { sourceSecret, payments, memo, memoType } = req.body;
+      const senderKey = StellarSDK.Keypair.fromSecret(sourceSecret).publicKey();
+
+      // Validate payments
+      if (payments.length > 10) {
+        return res.status(400).json({ error: 'Maximum 10 recipients per batch' });
+      }
+
+      let totalAmount = 0;
+      for (const payment of payments) {
+        totalAmount += parseFloat(payment.amount);
+        if (!isValidStellarAddress(payment.destination)) {
+          return res.status(400).json({ error: `Invalid recipient address: ${payment.destination}` });
+        }
+      }
+
+      // Sanctions screening for sender and recipients
+      const senderKyc = await prisma.kYCRecord.findFirst({
+        where: { user: { publicKey: senderKey } },
+      });
+      const senderName = senderKyc?.fullName ?? senderKey;
+
+      const [senderScreen, ...recipientScreens] = await Promise.all([
+        sanctionsChecker.check(senderName),
+        ...payments.map((p) => sanctionsChecker.check(p.destination)),
+      ]);
+
+      if (senderScreen.hit) {
+        return res.status(403).json({ error: { code: 'SANCTIONS_MATCH', message: 'Sanctions screening failed', reason: senderScreen.reason } });
+      }
+
+      for (const screen of recipientScreens) {
+        if (screen.hit) {
+          return res.status(403).json({ error: { code: 'SANCTIONS_MATCH', message: 'Recipient sanctions screening failed', reason: screen.reason } });
+        }
+      }
+
+      // Build batch transaction
+      const sourceKeypair = StellarSDK.Keypair.fromSecret(sourceSecret);
+      const sourceAccount = await StellarService.getHorizonServer().loadAccount(senderKey);
+
+      const txBuilder = new StellarSDK.TransactionBuilder(sourceAccount, {
+        fee: StellarSDK.BASE_FEE * Math.ceil(payments.length / 100),
+        networkPassphrase: StellarService.isTestnet() ? StellarSDK.Networks.TESTNET : StellarSDK.Networks.PUBLIC,
+      });
+
+      // Add payment operations
+      for (const payment of payments) {
+        const assetCode = payment.assetCode ?? 'XLM';
+        const asset = assetCode === 'XLM' ? StellarSDK.Asset.native() : new StellarSDK.Asset(assetCode, getIssuer(assetCode));
+
+        txBuilder.addOperation(
+          StellarSDK.Operation.payment({
+            destination: payment.destination,
+            asset,
+            amount: payment.amount.toString(),
+          })
+        );
+      }
+
+      // Add memo if provided
+      if (memo) {
+        let stellarMemo;
+        switch (memoType) {
+          case 'id':
+            stellarMemo = StellarSDK.Memo.id(memo);
+            break;
+          case 'hash':
+            stellarMemo = StellarSDK.Memo.hash(memo);
+            break;
+          case 'return':
+            stellarMemo = StellarSDK.Memo.return(memo);
+            break;
+          case 'text':
+          default:
+            stellarMemo = StellarSDK.Memo.text(memo);
+            break;
+        }
+        txBuilder.addMemo(stellarMemo);
+      }
+
+      const transaction = txBuilder.setTimeout(30).build();
+      transaction.sign(sourceKeypair);
+
+      // Submit transaction
+      const result = await StellarService.getHorizonServer().submitTransaction(transaction);
+
+      res.json({
+        hash: result.hash,
+        ledger: result.ledger,
+        payments: payments.length,
+        totalAmount,
+        successful: true,
+      });
+    } catch (error) {
+      logError(req, error, { context: 'batch-payment' });
+      res.status(500).json({ error: error.message });
+    }
+  }
+);
 
 export default router;
