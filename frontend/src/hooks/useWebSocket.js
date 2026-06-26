@@ -1,8 +1,14 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
-const WS_URL = `ws://${window.location.hostname}:3001`;
+const WS_BASE = `ws://${window.location.hostname}:3001`;
 const RECONNECT_DELAY = 3000;
 const MAX_RECONNECT = 5;
+
+function buildWsUrl() {
+  const token = localStorage.getItem('accessToken');
+  if (!token) return WS_BASE;
+  return `${WS_BASE}?token=${encodeURIComponent(token)}`;
+}
 
 export function useWebSocket(publicKey, onMessage) {
   const [status, setStatus] = useState('disconnected'); // 'connected' | 'disconnected' | 'reconnecting'
@@ -14,14 +20,14 @@ export function useWebSocket(publicKey, onMessage) {
   const connect = useCallback(() => {
     if (ws.current?.readyState === WebSocket.OPEN) return;
 
-    const socket = new WebSocket(WS_URL);
+    const socket = new WebSocket(buildWsUrl());
     ws.current = socket;
 
     socket.onopen = () => {
       attempts.current = 0;
       setStatus('connected');
+      // JWT was validated at handshake; subscribe immediately.
       if (publicKey) socket.send(JSON.stringify({ type: 'subscribe', publicKey }));
-      // Also subscribe to the shared rates channel for rateChange events
       socket.send(JSON.stringify({ type: 'subscribe', publicKey: 'rates' }));
     };
 
