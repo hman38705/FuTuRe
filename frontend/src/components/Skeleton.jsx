@@ -66,7 +66,10 @@ export function SkeletonCard({ className = '', ...props }) {
       <span className="skeleton-block" style={{ width: 16, height: 16, borderRadius: 4 }} />
       <span className="skeleton-block" style={{ width: 80, height: 14, borderRadius: 4 }} />
       <span className="skeleton-block" style={{ width: 100, height: 14, borderRadius: 4 }} />
-      <span className="skeleton-block" style={{ width: 120, height: 14, borderRadius: 4, marginLeft: 'auto' }} />
+      <span
+        className="skeleton-block"
+        style={{ width: 120, height: 14, borderRadius: 4, marginLeft: 'auto' }}
+      />
       <span className="skeleton-block" style={{ width: 16, height: 16, borderRadius: 4 }} />
     </div>
   );
@@ -96,7 +99,7 @@ export function SkeletonBalance({ rows = 2, className = '', ...props }) {
           className="balance-row"
           style={{
             display: 'flex',
-            justify-content: 'space-between',
+            justifyContent: 'space-between',
             alignItems: 'center',
             padding: '4px 0',
             height: '29px',

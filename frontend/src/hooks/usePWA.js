@@ -38,8 +38,14 @@ export function useWebAuthn(userId) {
         const options = await webAuthnPost('register', { userId, deviceName });
 
         // Convert base64url challenge to ArrayBuffer for the browser API
-        const challengeBuffer = Uint8Array.from(atob(options.challenge.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
-        const userIdBuffer = Uint8Array.from(atob(options.user.id.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
+        const challengeBuffer = Uint8Array.from(
+          atob(options.challenge.replace(/-/g, '+').replace(/_/g, '/')),
+          (c) => c.charCodeAt(0),
+        );
+        const userIdBuffer = Uint8Array.from(
+          atob(options.user.id.replace(/-/g, '+').replace(/_/g, '/')),
+          (c) => c.charCodeAt(0),
+        );
 
         const credential = await navigator.credentials.create({
           publicKey: {
@@ -52,7 +58,9 @@ export function useWebAuthn(userId) {
         if (!credential) throw new Error('Credential creation was cancelled');
 
         // Encode the public key for transmission
-        const publicKey = btoa(String.fromCharCode(...new Uint8Array(credential.response.getPublicKey?.() ?? [])));
+        const publicKey = btoa(
+          String.fromCharCode(...new Uint8Array(credential.response.getPublicKey?.() ?? [])),
+        );
 
         // Phase 2: send credential to server for storage
         return await webAuthnPost('register', {
@@ -66,48 +74,50 @@ export function useWebAuthn(userId) {
         throw err;
       }
     },
-    [userId, isSupported]
+    [userId, isSupported],
   );
 
-  const loginWithBiometric = useCallback(
-    async () => {
-      if (!isSupported) throw new Error('WebAuthn is not supported on this device');
-      setWebAuthnError(null);
-      try {
-        // Phase 1: get authentication options from server
-        const options = await webAuthnPost('authenticate', { userId });
+  const loginWithBiometric = useCallback(async () => {
+    if (!isSupported) throw new Error('WebAuthn is not supported on this device');
+    setWebAuthnError(null);
+    try {
+      // Phase 1: get authentication options from server
+      const options = await webAuthnPost('authenticate', { userId });
 
-        const challengeBuffer = Uint8Array.from(atob(options.challenge.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
-        const allowCredentials = (options.allowCredentials || []).map((c) => ({
-          ...c,
-          id: Uint8Array.from(atob(c.id.replace(/-/g, '+').replace(/_/g, '/')), (ch) => ch.charCodeAt(0)),
-        }));
+      const challengeBuffer = Uint8Array.from(
+        atob(options.challenge.replace(/-/g, '+').replace(/_/g, '/')),
+        (c) => c.charCodeAt(0),
+      );
+      const allowCredentials = (options.allowCredentials || []).map((c) => ({
+        ...c,
+        id: Uint8Array.from(atob(c.id.replace(/-/g, '+').replace(/_/g, '/')), (ch) =>
+          ch.charCodeAt(0),
+        ),
+      }));
 
-        const assertion = await navigator.credentials.get({
-          publicKey: {
-            ...options,
-            challenge: challengeBuffer,
-            allowCredentials,
-          },
-        });
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          ...options,
+          challenge: challengeBuffer,
+          allowCredentials,
+        },
+      });
 
-        if (!assertion) throw new Error('Authentication was cancelled');
+      if (!assertion) throw new Error('Authentication was cancelled');
 
-        const signature = btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature)));
+      const signature = btoa(String.fromCharCode(...new Uint8Array(assertion.response.signature)));
 
-        // Phase 2: verify assertion with server
-        return await webAuthnPost('authenticate', {
-          userId,
-          challengeId: options.challengeId,
-          assertion: { credentialId: assertion.id, signature },
-        });
-      } catch (err) {
-        setWebAuthnError(err.message);
-        throw err;
-      }
-    },
-    [userId, isSupported]
-  );
+      // Phase 2: verify assertion with server
+      return await webAuthnPost('authenticate', {
+        userId,
+        challengeId: options.challengeId,
+        assertion: { credentialId: assertion.id, signature },
+      });
+    } catch (err) {
+      setWebAuthnError(err.message);
+      throw err;
+    }
+  }, [userId, isSupported]);
 
   return { isSupported, registerBiometric, loginWithBiometric, webAuthnError };
 }
@@ -120,7 +130,9 @@ function trackInstallEvent(event) {
     if (typeof window.gtag === 'function') {
       window.gtag('event', 'pwa_install_prompt', { action: event });
     }
-  } catch (_) {}
+  } catch (_) {
+    /* swallow */
+  }
 }
 
 /**
@@ -189,7 +201,9 @@ export function usePWA() {
   const dismissInstall = useCallback(() => {
     try {
       localStorage.setItem(DISMISS_KEY, String(Date.now()));
-    } catch (_) {}
+    } catch (_) {
+      /* swallow */
+    }
     setDismissed(true);
     trackInstallEvent('dismissed');
   }, []);
@@ -217,7 +231,7 @@ export function usePWA() {
           // In production, replace with your VAPID public key
           applicationServerKey: urlBase64ToUint8Array(
             import.meta.env.VITE_VAPID_PUBLIC_KEY ||
-              'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U'
+              'BEl62iUYgUivxIkv69yViEuiBIa-Ib9-SkvMeAtA3LFgDzkrxZJjSgSnfckjBJuBkr3qBUYIHBQFLXYp5Nksh8U',
           ),
         });
 
@@ -227,7 +241,7 @@ export function usePWA() {
         console.error('Push subscription failed:', err);
       }
     },
-    [swReg]
+    [swReg],
   );
 
   return {

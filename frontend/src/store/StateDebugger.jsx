@@ -2,9 +2,8 @@
 import { useAppState } from './AppStateContext.jsx';
 
 export function StateDebugger() {
-  if (import.meta.env.PROD) return null;
-
   const state = useAppState();
+  if (import.meta.env.PROD) return null;
   // Mask secret key in debug view
   const display = {
     ...state,
@@ -16,10 +15,19 @@ export function StateDebugger() {
   return (
     <details
       style={{
-        position: 'fixed', bottom: 8, right: 8, zIndex: 9999,
-        background: '#1e1e2e', color: '#cdd6f4', fontSize: 11,
-        padding: '6px 10px', borderRadius: 6, maxWidth: 340,
-        maxHeight: 320, overflow: 'auto', opacity: 0.92,
+        position: 'fixed',
+        bottom: 8,
+        right: 8,
+        zIndex: 9999,
+        background: '#1e1e2e',
+        color: '#cdd6f4',
+        fontSize: 11,
+        padding: '6px 10px',
+        borderRadius: 6,
+        maxWidth: 340,
+        maxHeight: 320,
+        overflow: 'auto',
+        opacity: 0.92,
       }}
     >
       <summary style={{ cursor: 'pointer', fontWeight: 600 }}>🛠 State</summary>

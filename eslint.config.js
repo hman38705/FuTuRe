@@ -105,19 +105,16 @@ export default [
       'no-shadow': ['error', { builtinGlobals: false, hoist: 'all', allow: [] }],
       // Disable rules from plugins not installed at root scope
       'react-hooks/exhaustive-deps': 'off',
-      'jsx-a11y/no-autofocus': 'off',
     },
   },
   prettier,
   {
-    ignores: ['**/node_modules/**', '**/dist/**', '**/build/**', '**/coverage/**'],
     ignores: [
       '**/node_modules/**',
       '**/dist/**',
       '**/build/**',
-      // Frontend has its own eslint.config.js; exclude from root backend config
+      '**/coverage/**',
       'frontend/**',
-      // Standalone Node.js utility scripts — not part of the app bundle
       'scripts/**',
     ],
   },

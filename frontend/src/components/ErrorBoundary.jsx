@@ -36,7 +36,7 @@ export class ErrorBoundary extends Component {
   }
 
   componentDidCatch(error, errorInfo) {
-    this.state.errorInfo = errorInfo;
+    this.setState({ errorInfo });
     logError(error, {
       source: 'react-error-boundary',
       componentStack: errorInfo?.componentStack,
@@ -79,7 +79,9 @@ export class ErrorBoundary extends Component {
           <span style={styles.icon}>⚠️</span>
           <p style={styles.sectionTitle}>{this.props.context} Error</p>
           <p style={styles.message}>{this.state.error.message}</p>
-          <button style={styles.button} onClick={this.handleReset}>Try again</button>
+          <button style={styles.button} onClick={this.handleReset}>
+            Try again
+          </button>
         </div>
       );
     }
@@ -90,7 +92,9 @@ export class ErrorBoundary extends Component {
         <span style={styles.icon}>⚠️</span>
         <p style={styles.title}>Something went wrong</p>
         <p style={styles.message}>{this.state.error.message}</p>
-        <button style={styles.button} onClick={this.handleReset}>Try again</button>
+        <button style={styles.button} onClick={this.handleReset}>
+          Try again
+        </button>
       </div>
     );
   }
@@ -113,12 +117,17 @@ const styles = {
     borderRadius: 4,
     textAlign: 'center',
   },
-  icon:    { fontSize: '2rem' },
-  title:   { fontWeight: 600, margin: '8px 0 4px', color: '#b91c1c' },
+  icon: { fontSize: '2rem' },
+  title: { fontWeight: 600, margin: '8px 0 4px', color: '#b91c1c' },
   sectionTitle: { fontWeight: 600, margin: '4px 0 2px', color: '#b91c1c', fontSize: 14 },
   message: { fontSize: 13, color: '#7f1d1d', marginBottom: 12, wordBreak: 'break-word' },
-  button:  {
-    background: '#0066cc', color: '#fff', border: 'none',
-    padding: '8px 20px', borderRadius: 4, cursor: 'pointer', fontSize: 14,
+  button: {
+    background: '#0066cc',
+    color: '#fff',
+    border: 'none',
+    padding: '8px 20px',
+    borderRadius: 4,
+    cursor: 'pointer',
+    fontSize: 14,
   },
 };

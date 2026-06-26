@@ -28,7 +28,9 @@ export function TxLookup({ initialHash = '', accountPublicKey = '', onClose }) {
   useFocusTrap(modalRef, true);
 
   useEffect(() => {
-    const onKey = (e) => { if (e.key === 'Escape') onClose(); };
+    const onKey = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
@@ -36,7 +38,6 @@ export function TxLookup({ initialHash = '', accountPublicKey = '', onClose }) {
   // Auto-fetch when opened with a pre-filled hash + known account
   useEffect(() => {
     if (initialHash && accountPublicKey) lookup(initialHash, accountPublicKey);
-    // eslint-disable-next-line react-hooks/exhaustive-deps,jsx-a11y/no-autofocus
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -51,7 +52,7 @@ export function TxLookup({ initialHash = '', accountPublicKey = '', onClose }) {
       const { data } = await apiClient.get(`/api/stellar/account/${trimPk}/transactions`, {
         params: { hash: trimH, limit: 50 },
       });
-      const found = data.records?.find(r => r.hash?.toLowerCase() === trimH.toLowerCase());
+      const found = data.records?.find((r) => r.hash?.toLowerCase() === trimH.toLowerCase());
       if (found) {
         setTx(found);
       } else {
@@ -64,18 +65,23 @@ export function TxLookup({ initialHash = '', accountPublicKey = '', onClose }) {
     }
   }
 
-  const handleSubmit = (e) => { e.preventDefault(); lookup(); };
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    lookup();
+  };
 
   return (
     <motion.div
       className="tx-overlay"
       onClick={onClose}
-      initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
     >
       <motion.div
         ref={modalRef}
         className="tx-modal"
-        onClick={e => e.stopPropagation()}
+        onClick={(e) => e.stopPropagation()}
         initial={{ scale: 0.9, opacity: 0 }}
         animate={{ scale: 1, opacity: 1 }}
         exit={{ scale: 0.9, opacity: 0 }}
@@ -85,39 +91,53 @@ export function TxLookup({ initialHash = '', accountPublicKey = '', onClose }) {
       >
         <div className="tx-modal-header">
           <h3 id="tx-lookup-title">{tx ? 'Transaction Details' : 'Look Up Transaction'}</h3>
-          <button className="qr-close" onClick={onClose} aria-label="Close transaction lookup">✕</button>
+          <button className="qr-close" onClick={onClose} aria-label="Close transaction lookup">
+            ✕
+          </button>
         </div>
 
         {!tx ? (
-          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <form
+            onSubmit={handleSubmit}
+            style={{ display: 'flex', flexDirection: 'column', gap: 10 }}
+          >
             {!accountPublicKey && (
               <>
-                <label htmlFor="tl-pubkey" className="sr-only">Account public key</label>
+                <label htmlFor="tl-pubkey" className="sr-only">
+                  Account public key
+                </label>
                 <input
                   id="tl-pubkey"
                   type="text"
                   placeholder="Account Public Key (G…)"
                   value={publicKey}
-                  onChange={e => setPublicKey(e.target.value)}
+                  onChange={(e) => setPublicKey(e.target.value)}
                   spellCheck={false}
                   aria-label="Account public key"
-                  style={{ border: `2px solid ${publicKey && !isValidStellarAddress(publicKey) ? '#ef4444' : '#ccc'}` }}
+                  style={{
+                    border: `2px solid ${publicKey && !isValidStellarAddress(publicKey) ? '#ef4444' : '#ccc'}`,
+                  }}
                 />
               </>
             )}
-            <label htmlFor="tl-hash" className="sr-only">Transaction hash</label>
+            <label htmlFor="tl-hash" className="sr-only">
+              Transaction hash
+            </label>
             <input
               id="tl-hash"
               type="text"
               placeholder="Transaction hash"
               value={hash}
-              onChange={e => setHash(e.target.value)}
+              onChange={(e) => setHash(e.target.value)}
               spellCheck={false}
               aria-label="Transaction hash"
-              // eslint-disable-next-line jsx-a11y/no-autofocus
               autoFocus={!initialHash}
             />
-            {error && <p className="field-error" role="alert">{error}</p>}
+            {error && (
+              <p className="field-error" role="alert">
+                {error}
+              </p>
+            )}
             <button
               type="submit"
               disabled={loading || !hash.trim() || !publicKey.trim()}
@@ -129,15 +149,42 @@ export function TxLookup({ initialHash = '', accountPublicKey = '', onClose }) {
         ) : (
           <>
             <dl className="tx-detail-list">
-              <dt>Hash</dt><dd className="tx-hash">{tx.hash}</dd>
-              <dt>Type</dt><dd>{TYPE_LABELS[tx.type] ?? tx.type}</dd>
-              {tx.direction && <><dt>Direction</dt><dd>{tx.direction}</dd></>}
-              {tx.amount && <><dt>Amount</dt><dd>{tx.amount} {tx.asset}</dd></>}
-              {tx.counterparty && <><dt>Counterparty</dt><dd className="tx-hash">{tx.counterparty}</dd></>}
-              <dt>Date</dt><dd>{fmt(tx.date)}</dd>
-              <dt>Fee</dt><dd>{tx.fee} stroops</dd>
-              {tx.memo && <><dt>Memo</dt><dd>{tx.memo}</dd></>}
-              <dt>Status</dt><dd>{tx.successful ? '✓ Success' : '✗ Failed'}</dd>
+              <dt>Hash</dt>
+              <dd className="tx-hash">{tx.hash}</dd>
+              <dt>Type</dt>
+              <dd>{TYPE_LABELS[tx.type] ?? tx.type}</dd>
+              {tx.direction && (
+                <>
+                  <dt>Direction</dt>
+                  <dd>{tx.direction}</dd>
+                </>
+              )}
+              {tx.amount && (
+                <>
+                  <dt>Amount</dt>
+                  <dd>
+                    {tx.amount} {tx.asset}
+                  </dd>
+                </>
+              )}
+              {tx.counterparty && (
+                <>
+                  <dt>Counterparty</dt>
+                  <dd className="tx-hash">{tx.counterparty}</dd>
+                </>
+              )}
+              <dt>Date</dt>
+              <dd>{fmt(tx.date)}</dd>
+              <dt>Fee</dt>
+              <dd>{tx.fee} stroops</dd>
+              {tx.memo && (
+                <>
+                  <dt>Memo</dt>
+                  <dd>{tx.memo}</dd>
+                </>
+              )}
+              <dt>Status</dt>
+              <dd>{tx.successful ? '✓ Success' : '✗ Failed'}</dd>
             </dl>
             <button
               type="button"
