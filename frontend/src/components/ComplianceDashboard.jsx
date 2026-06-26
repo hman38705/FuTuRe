@@ -8,7 +8,9 @@ const SEVERITY_COLORS = {
   LOW: '#22c55e',
 };
 
-export function ComplianceDashboard({ onClose }) {
+const ALLOWED_ROLES = ['COMPLIANCE', 'ADMIN'];
+
+export function ComplianceDashboard({ onClose, userRole }) {
   const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -47,6 +49,28 @@ export function ComplianceDashboard({ onClose }) {
       setError(err.response?.data?.error || 'Failed to mark alert as reviewed');
     }
   };
+
+  if (!ALLOWED_ROLES.includes(userRole)) {
+    return (
+      <div
+        className="replay-modal-overlay"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="compliance-title"
+        onClick={(e) => e.target === e.currentTarget && onClose()}
+      >
+        <div className="replay-modal" style={{ maxWidth: 480 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+            <h2 id="compliance-title" style={{ margin: 0 }}>AML Compliance Dashboard</h2>
+            <button type="button" className="qr-close" onClick={onClose} aria-label="Close dashboard">✕</button>
+          </div>
+          <div role="alert" style={{ padding: 12, background: '#fee', color: '#c00', borderRadius: 4 }}>
+            Access denied. This dashboard requires Compliance Officer or Admin role.
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

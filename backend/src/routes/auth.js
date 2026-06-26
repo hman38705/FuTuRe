@@ -169,13 +169,7 @@ router.post('/register', authRateLimiter, userRules, validateBody, async (req, r
  *       500:
  *         $ref: '#/components/responses/InternalServerError'
  */
-const loginRateLimiter = createRateLimiter({
-  windowMs: 60000,
-  max: 10,
-  message: 'Too many login attempts, please try again later.',
-});
-
-router.post('/login', loginRateLimiter, userRules, validateBody, async (req, res) => {
+router.post('/login', authRateLimiter, userRules, validateBody, async (req, res) => {
   const { username, password } = req.body;
   const ipAddress = getClientIP(req);
 
@@ -202,7 +196,7 @@ router.post('/login', loginRateLimiter, userRules, validateBody, async (req, res
     if (valid) {
       updateUserPassword(user.id, recovered.passwordHash);
       await clearFailedAttempts(username);
-      const recoveredPayload = { sub: user.id, username: user.username };
+      const recoveredPayload = { sub: user.id, username: user.username, role: user.role || 'USER' };
       const recoveredRefreshToken = signRefreshToken(recoveredPayload);
       setRefreshTokenCookie(res, recoveredRefreshToken);
       return res.json({
@@ -221,7 +215,7 @@ router.post('/login', loginRateLimiter, userRules, validateBody, async (req, res
 
   // Successful login - clear failed attempts
   await clearFailedAttempts(username);
-  const payload = { sub: user.id, username: user.username };
+  const payload = { sub: user.id, username: user.username, role: user.role || 'USER' };
   const refreshToken = signRefreshToken(payload);
   setRefreshTokenCookie(res, refreshToken);
   res.json({
@@ -341,9 +335,114 @@ router.get('/profile', requireAuth, (req, res) => {
 
 /**
  * @swagger
+ * /api/auth/csrf-token:
+ *   get:
+ *     summary: Get CSRF token for state-mutating requests
+ *     tags: [Auth]
+ *     security: []
+ *     responses:
+ *       200:
+ *         description: CSRF token issued
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 csrfToken: { type: string }
+ */
+router.get('/csrf-token', csrfTokenEndpoint);
+
+/**
+ * @swagger
+ * /api/auth/mfa/setup:
+ *   post:
+ *     summary: Setup MFA (TOTP) for authenticated user
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: MFA setup initiated
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 secret: { type: string }
+ *                 qrCode: { type: string }
+ *                 backupCodes: { type: array, items: { type: string } }
+ *       401:
+ *         description: Unauthorized
+ */
+router.post('/mfa/setup', requireAuth, async (req, res) => {
+  try {
+    const { secret, qrCode } = mfaManager.generateSecret(req.user.sub);
+    const backupCodes = mfaManager.enableMFA(req.user.sub, secret);
+    const encryptionKey = getConfig().security.mfaEncryptionKey || 'default-key';
+    mfaManager.encryptSecret(secret, encryptionKey);
+    res.json({
+      secret,
+      qrCode,
+      backupCodes,
+      message: 'Scan the QR code with your authenticator app',
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/mfa/verify:
+ *   post:
+ *     summary: Verify MFA token to complete setup
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [token]
+ *             properties:
+ *               token:
+ *                 type: string
+ *                 description: 6-digit TOTP code
+ *     responses:
+ *       200:
+ *         description: MFA verified and enabled
+ *       403:
+ *         description: Invalid MFA token
+ */
+router.post('/mfa/verify', requireAuth, (req, res) => {
+  const { token } = req.body;
+
+  if (!token) {
+    return res.status(400).json({ error: 'Token required' });
+  }
+
+  try {
+    const mfa = mfaManager.userMFA.get(req.user.sub);
+    if (!mfa) {
+      return res.status(400).json({ error: 'MFA setup not initiated' });
+    }
+
+    mfaManager.verifyTOTP(req.user.sub, token, mfa.secret);
+
+    // In production, mark MFA as verified in database
+    res.json({ message: 'MFA enabled successfully' });
+  } catch (error) {
+    res.status(403).json({ error: error.message });
+  }
+});
+
+/**
+ * @swagger
  * /api/auth/admin/unlock:
  *   post:
- *     summary: Admin endpoint to manually unlock a locked account
+ *     summary: Admin endpoint to manually unlock an account
  *     tags: [Auth]
  *     security:
  *       - bearerAuth: []
@@ -396,36 +495,6 @@ router.post('/admin/unlock', requireAuth, async (req, res) => {
   } catch (err) {
     logger.error({ err, username }, 'Failed to unlock account');
     res.status(500).json({ error: 'Failed to unlock account' });
-  }
-});
-
-router.get('/csrf-token', csrfTokenEndpoint);
-
-router.post('/mfa/setup', requireAuth, async (req, res) => {
-  try {
-    const { secret, qrCode } = mfaManager.generateSecret(req.user.sub);
-    const backupCodes = mfaManager.enableMFA(req.user.sub, secret);
-    res.json({
-      secret,
-      qrCode,
-      backupCodes,
-      message: 'Scan the QR code with your authenticator app',
-    });
-  } catch (error) {
-    res.status(500).json({ error: error.message });
-  }
-});
-
-router.post('/mfa/verify', requireAuth, (req, res) => {
-  const { token } = req.body;
-  if (!token) return res.status(400).json({ error: 'Token required' });
-  try {
-    const mfa = mfaManager.userMFA.get(req.user.sub);
-    if (!mfa) return res.status(400).json({ error: 'MFA setup not initiated' });
-    mfaManager.verifyTOTP(req.user.sub, token, mfa.secret);
-    res.json({ message: 'MFA enabled successfully' });
-  } catch (error) {
-    res.status(403).json({ error: error.message });
   }
 });
 
@@ -536,7 +605,6 @@ router.get('/oauth/google/callback', async (req, res) => {
 });
 
 /**
- * @swagger
  * /api/auth/data-export:
  *   get:
  *     summary: Export all personal data for the authenticated user (GDPR Art. 15)
@@ -616,6 +684,64 @@ router.get('/data-export', requireAuth, async (req, res) => {
   } catch (error) {
     logger.error({ err: error, userId }, 'data-export failed');
     res.status(500).json({ error: 'Failed to export user data' });
+  }
+});
+
+/**
+ * @swagger
+ * /api/auth/users/{id}/role:
+ *   put:
+ *     summary: Assign a role to a user (admin only)
+ *     tags: [Auth]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [role]
+ *             properties:
+ *               role:
+ *                 type: string
+ *                 enum: [USER, COMPLIANCE, ADMIN]
+ *     responses:
+ *       200:
+ *         description: Role updated
+ *       400:
+ *         description: Invalid role
+ *       401:
+ *         description: Unauthorized
+ *       403:
+ *         description: Admin access required
+ *       404:
+ *         description: User not found
+ */
+router.put('/users/:id/role', requireAuth, async (req, res) => {
+  if (req.user.role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Admin access required' });
+  }
+  const { role } = req.body;
+  const validRoles = ['USER', 'COMPLIANCE', 'ADMIN'];
+  if (!validRoles.includes(role)) {
+    return res.status(400).json({ error: 'Invalid role. Must be USER, COMPLIANCE, or ADMIN' });
+  }
+  try {
+    const updated = await prisma.user.update({
+      where: { id: req.params.id },
+      data: { role },
+      select: { id: true, username: true, role: true },
+    });
+    res.json(updated);
+  } catch (err) {
+    if (err.code === 'P2025') return res.status(404).json({ error: 'User not found' });
+    res.status(500).json({ error: 'Failed to update role' });
   }
 });
 

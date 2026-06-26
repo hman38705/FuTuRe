@@ -1425,7 +1425,7 @@ function App() {
                           label: '💾 Backup',
                           action: () => setShowBackupSettings(true),
                         },
-                        ...(userRole === 'admin'
+                        ...(['COMPLIANCE', 'ADMIN'].includes(userRole)
                           ? [
                               {
                                 id: 'compliance',
@@ -1531,7 +1531,7 @@ function App() {
                       { id: 'kyc', label: '📋 KYC', ariaLabel: 'Toggle KYC identity verification panel' },
                       { id: 'notifications', label: '🔔 Notifications', ariaLabel: 'Toggle notification preferences panel' },
                       { id: 'backup', label: '💾 Backup', ariaLabel: 'Open backup settings', action: () => setShowBackupSettings(true) },
-                      ...(userRole === 'admin' ? [{ id: 'compliance', label: '🛡️ Compliance', ariaLabel: 'Open compliance dashboard', action: () => setShowComplianceDashboard(true) }] : []),
+                      ...(['COMPLIANCE', 'ADMIN'].includes(userRole) ? [{ id: 'compliance', label: '🛡️ Compliance', ariaLabel: 'Open compliance dashboard', action: () => setShowComplianceDashboard(true) }] : []),
                     ].map((section) => (
                       <button
                         key={section.id}

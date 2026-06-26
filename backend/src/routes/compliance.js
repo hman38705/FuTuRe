@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { requireAuth as authMiddleware } from '../middleware/auth.js';
-import { requireAdmin } from '../middleware/adminAuth.js';
+import { requireAdmin, requireRole } from '../middleware/adminAuth.js';
 import prisma from '../db/client.js';
 import {
   kycCollector,
@@ -235,7 +235,7 @@ router.get('/audit', authMiddleware, async (req, res) => {
  *       500:
  *         description: Server error
  */
-router.post('/reports', authMiddleware, async (req, res) => {
+router.post('/reports', requireRole('COMPLIANCE', 'ADMIN'), async (req, res) => {
   try {
     const { type, from, to } = req.body;
     const report = await complianceReporting.generateReport(type || 'AML_SUMMARY', { from, to });
@@ -259,7 +259,7 @@ router.post('/reports', authMiddleware, async (req, res) => {
  *       401:
  *         description: Unauthorized
  */
-router.get('/reports', authMiddleware, async (req, res) => {
+router.get('/reports', requireRole('COMPLIANCE', 'ADMIN'), async (req, res) => {
   const reports = await complianceReporting.listReports();
   res.json(reports);
 });
@@ -363,7 +363,7 @@ router.get('/reports/ctr', requireAdmin, async (req, res) => {
 // ── AML Alerts Dashboard (Admin Only) ────────────────────────────────────────
 
 // List all AML alerts with pagination
-router.get('/aml/alerts', requireAdmin, async (req, res) => {
+router.get('/aml/alerts', requireRole('COMPLIANCE', 'ADMIN'), async (req, res) => {
   try {
     const { page = 1, limit = 20, severity, reviewed } = req.query;
     const skip = (parseInt(page) - 1) * parseInt(limit);
@@ -409,8 +409,8 @@ router.get('/aml/alerts', requireAdmin, async (req, res) => {
   }
 });
 
-// Mark alert as reviewed (admin only)
-router.patch('/aml/alerts/:id/review', requireAdmin, async (req, res) => {
+// Mark alert as reviewed (compliance or admin only)
+router.patch('/aml/alerts/:id/review', requireRole('COMPLIANCE', 'ADMIN'), async (req, res) => {
   try {
     const { id } = req.params;
     const { notes } = req.body;
