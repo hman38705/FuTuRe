@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 
 const WS_URL = `ws://${window.location.hostname}:3001`;
-const RECONNECT_DELAY = 3000;
-const MAX_RECONNECT = 5;
+const BACKOFF_BASE_MS = 1000;
+const BACKOFF_MAX_MS = 30000;
+const MAX_RECONNECT = 10;
 
 export function useWebSocket(publicKey, onMessage) {
-  const [status, setStatus] = useState('disconnected'); // 'connected' | 'disconnected' | 'reconnecting'
+  const [status, setStatus] = useState('disconnected'); // 'connected' | 'disconnected' | 'reconnecting' | 'failed'
   const ws = useRef(null);
   const attempts = useRef(0);
   const onMessageRef = useRef(onMessage);
+  const lastEventTime = useRef(null);
   onMessageRef.current = onMessage;
 
   const connect = useCallback(() => {
@@ -20,25 +22,28 @@ export function useWebSocket(publicKey, onMessage) {
     socket.onopen = () => {
       attempts.current = 0;
       setStatus('connected');
-      if (publicKey) socket.send(JSON.stringify({ type: 'subscribe', publicKey }));
-      // Also subscribe to the shared rates channel for rateChange events
-      socket.send(JSON.stringify({ type: 'subscribe', publicKey: 'rates' }));
+      const since = lastEventTime.current;
+      if (publicKey) socket.send(JSON.stringify({ type: 'subscribe', publicKey, ...(since ? { since } : {}) }));
+      socket.send(JSON.stringify({ type: 'subscribe', publicKey: 'rates', ...(since ? { since } : {}) }));
     };
 
     socket.onmessage = (e) => {
       try {
         const parsed = JSON.parse(e.data);
-        // Broadcast messages are wrapped in { data, sig }; direct messages are not
+        lastEventTime.current = Date.now();
         onMessageRef.current?.(parsed.data ?? parsed);
-      } catch (_) { /* ignore connection errors handled by onclose */ }
+      } catch (_) { /* ignore parse errors */ }
     };
 
     socket.onclose = () => {
       setStatus('disconnected');
       if (attempts.current < MAX_RECONNECT) {
+        const delay = Math.min(BACKOFF_BASE_MS * Math.pow(2, attempts.current), BACKOFF_MAX_MS);
         attempts.current++;
         setStatus('reconnecting');
-        setTimeout(connect, RECONNECT_DELAY);
+        setTimeout(connect, delay);
+      } else {
+        setStatus('failed');
       }
     };
 
