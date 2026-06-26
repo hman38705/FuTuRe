@@ -52,6 +52,38 @@ function logError(req, error, context = {}) {
  *           enum: [asc, desc]
  *         description: Sort order
  *       - in: query
+ *         name: search
+ *         schema:
+ *           type: string
+ *         description: Search by address or memo
+ *       - in: query
+ *         name: from
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Start date filter (ISO 8601)
+ *       - in: query
+ *         name: to
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: End date filter (ISO 8601)
+ *       - in: query
+ *         name: assetCode
+ *         schema:
+ *           type: string
+ *         description: Filter by asset code
+ *       - in: query
+ *         name: minAmount
+ *         schema:
+ *           type: number
+ *         description: Minimum transaction amount
+ *       - in: query
+ *         name: maxAmount
+ *         schema:
+ *           type: number
+ *         description: Maximum transaction amount
+ *       - in: query
  *         name: includeFailed
  *         schema:
  *           type: boolean
@@ -60,19 +92,13 @@ function logError(req, error, context = {}) {
  *         name: asset
  *         schema:
  *           type: string
- *         description: Filter by asset code
+ *         description: Filter by asset code (deprecated, use assetCode)
  *       - in: query
  *         name: startTime
  *         schema:
  *           type: string
  *           format: date-time
- *         description: Start time filter (ISO 8601)
- *       - in: query
- *         name: endTime
- *         schema:
- *           type: string
- *           format: date-time
- *         description: End time filter (ISO 8601)
+ *         description: Start time filter (ISO 8601, deprecated use from)
  *     responses:
  *       200:
  *         description: Transaction history retrieved successfully
@@ -123,9 +149,12 @@ router.get('/:accountId', rules.accountIdParam, validate, async (req, res) => {
       cursor: req.query.cursor,
       order: req.query.order || 'desc',
       includeFailed: req.query.includeFailed === 'true',
-      asset: req.query.asset,
-      startTime: req.query.startTime,
-      endTime: req.query.endTime
+      search: req.query.search,
+      assetCode: req.query.assetCode || req.query.asset,
+      from: req.query.from || req.query.startTime,
+      to: req.query.to || req.query.endTime,
+      minAmount: req.query.minAmount ? parseFloat(req.query.minAmount) : undefined,
+      maxAmount: req.query.maxAmount ? parseFloat(req.query.maxAmount) : undefined,
     };
 
     const data = await transactionService.getTransactions(accountId, options);
@@ -149,8 +178,8 @@ router.get('/:accountId', rules.accountIdParam, validate, async (req, res) => {
  * @swagger
  * /api/transactions/{accountId}/search:
  *   get:
- *     summary: Search transactions
- *     description: Search transactions by hash, memo, operation type, or asset
+ *     summary: Search transactions with advanced filters
+ *     description: Search transactions with full-text search on address and memo, plus date range and amount filters
  *     tags: [Transactions]
  *     parameters:
  *       - in: path
@@ -161,12 +190,39 @@ router.get('/:accountId', rules.accountIdParam, validate, async (req, res) => {
  *         example: GCEZWKCA5VLDNRLN3RPRJMRZOX3Z6G5CHCGZWM9CQJHD9QDNHXHXN
  *         description: The Stellar account public key
  *       - in: query
- *         name: q
- *         required: true
+ *         name: search
+ *         required: false
  *         schema:
  *           type: string
  *         example: Invoice #42
- *         description: Search query (matches hash prefix, memo, operation type, or asset)
+ *         description: Search query (matches address or memo)
+ *       - in: query
+ *         name: from
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: Start date filter (ISO 8601)
+ *       - in: query
+ *         name: to
+ *         schema:
+ *           type: string
+ *           format: date-time
+ *         description: End date filter (ISO 8601)
+ *       - in: query
+ *         name: assetCode
+ *         schema:
+ *           type: string
+ *         description: Filter by asset code (e.g., XLM, USDC)
+ *       - in: query
+ *         name: minAmount
+ *         schema:
+ *           type: number
+ *         description: Minimum transaction amount
+ *       - in: query
+ *         name: maxAmount
+ *         schema:
+ *           type: number
+ *         description: Maximum transaction amount
  *       - in: query
  *         name: limit
  *         schema:
@@ -204,13 +260,27 @@ router.get('/:accountId', rules.accountIdParam, validate, async (req, res) => {
 router.get('/:accountId/search', rules.accountIdParam, validate, async (req, res) => {
   try {
     const { accountId } = req.params;
-    const { q: searchTerm, limit = 50 } = req.query;
+    const {
+      search,
+      from,
+      to,
+      assetCode,
+      minAmount,
+      maxAmount,
+      limit = 50
+    } = req.query;
 
-    if (!searchTerm) {
-      return res.status(400).json({ error: 'Search query parameter "q" is required' });
-    }
+    const options = {
+      search,
+      from,
+      to,
+      assetCode,
+      minAmount: minAmount ? parseFloat(minAmount) : undefined,
+      maxAmount: maxAmount ? parseFloat(maxAmount) : undefined,
+      limit: Math.min(100, Math.max(1, parseInt(limit) || 50)),
+    };
 
-    const results = await transactionService.searchTransactions(accountId, searchTerm, { limit });
+    const results = await transactionService.searchTransactions(accountId, options);
     res.json(results);
   } catch (error) {
     logError(req, error, { accountId: req.params.accountId });
